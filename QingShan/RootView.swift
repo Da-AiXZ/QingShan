@@ -253,7 +253,10 @@ struct RootView: View {
         guard !cmd.isEmpty, phase == .ready, !exec.isRunning else { return }
         input = ""
         ConsoleHub.appendLine("\u{1F539} \(cmd)")
-        exec.run(cmd, timeout: timeouts[timeoutIdx], onLine: { _ in }, onDone: { _ in })
+        exec.run(cmd,
+                 timeout: timeouts[timeoutIdx],
+                 onLine: { line in ConsoleHub.append(line + "\n") },
+                 onDone: { msg in ConsoleHub.appendLine("— " + msg) })
     }
 
     // MARK: boot 流程（沿用 M0.2）
