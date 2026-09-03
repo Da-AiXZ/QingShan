@@ -579,8 +579,6 @@ static void handle_process_exit(struct task *task, int code) {
     // 3. Create device nodes
     [self createDeviceNodes];
 
-    // 3.5. Apply rootfs overlay patches (e.g. fetch-polyfill.js)
-    FsApplyOverlay();
 
     // 4. Mount proc and devpts filesystems
     do_mount(&procfs, "proc", "/proc", "", 0);
@@ -625,38 +623,8 @@ static void handle_process_exit(struct task *task, int code) {
     }
 
     // 9. Register native binary bindings (ffmpeg, etc.)
-    ffmpeg_offload_register();
-    calendar_offload_register();
-    location_offload_register();
-    weather_offload_register();
-    vision_offload_register();
-    open_offload_register();
-    clipboard_offload_register();
-    healthkit_offload_register();
-    photos_offload_register();
-    maps_offload_register();
-    nlp_offload_register();
-    alarm_offload_register();
-    media_offload_register();
-    speak_offload_register();
-    speech_offload_register();
-    device_offload_register();
-    homekit_offload_register();
-    notification_offload_register();
-    player_offload_register();
-    model_use_offload_register();
-    reminders_offload_register();
-    bluetooth_offload_register();
-    nfc_offload_register();
-    sessions_offload_register();
-    browser_use_offload_register();
-    config_offload_register();
-    // Registered in every build: the `minis-debug logs` subcommand reads the
     // app's own runtime log in-process (OSLogStore + LoggingManager) and must
-    // work on Release devices (T-ios-minis-debug-logs-oslogstore). The
-    // RPC-backed subcommands inside the handler stay DEBUG-gated and
     // self-report as unavailable in Release.
-    debug_offload_register();
 
     _isBooted = YES;
     NSLog(@"ISHKernel: Kernel initialized successfully");
