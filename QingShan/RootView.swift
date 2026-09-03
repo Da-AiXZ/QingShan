@@ -160,7 +160,7 @@ struct RootView: View {
                             }
                             .padding(.vertical, 40)
                         }
-                        ForEach(agent.messages.filter { !($0.role == .agent && $0.text.isEmpty) }) { m in
+                        ForEach(agent.messages) { m in
                             messageRow(m).id(m.id)
                         }
                         if agent.isThinking {
@@ -220,7 +220,19 @@ struct RootView: View {
         case .agent:
             HStack(alignment: .top, spacing: 0) {
                 Text("•").foregroundStyle(Color.secondary).frame(width: 15, alignment: .leading)
-                Text(m.text).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    if let r = m.reasoning, !r.isEmpty {
+                        Text("Thinking").font(.caption2).foregroundStyle(Color.secondary)
+                        Text(r)
+                            .font(.system(size: 12.5))
+                            .italic()
+                            .foregroundStyle(Color.secondary)
+                            .textSelection(.enabled)
+                    }
+                    if !m.text.isEmpty {
+                        Text(m.text).textSelection(.enabled)
+                    }
+                }
             }
         case .tool:
             ToolMessageRow(m: m)

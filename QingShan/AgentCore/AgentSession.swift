@@ -11,6 +11,7 @@ struct ChatMessage: Identifiable {
     var exitCode: Int?
     var durationMs: Int?
     var running: Bool = false
+    var reasoning: String?
 
     enum Role { case user, agent, tool }
 
@@ -169,12 +170,11 @@ final class AgentSession: ObservableObject {
             stepNo += 1
             log?.append(SessionEvent.stepStart, .init(turn: turnNo, step: stepNo))
 
-            // assistant 流式占位行
+            // assistant 流式占位行（含思考区）
             messages.append(.agent(""))
-            let rowId = messages[messages.count - 1].id
             var full = ""
+            var reasoningAcc = ""
             var toolCalls: [LLMToolCall] = []
-            var usage = (0, 0)
             var streamError: String?
 
             do {
@@ -182,20 +182,21 @@ final class AgentSession: ObservableObject {
                 let stream = adapter.stream(messages: llmHistory, tools: [Self.runCommandTool])
                 for try await ev in stream {
                     switch ev {
-                    case .reasoningDelta:
-                        break   // M3 简化：思考增量不落 UI（日志也不逐条记）
+                    case .reasoningDelta(let d):
+                        // 思考增量：实时上屏（dim 区），整块入 assistant/message 日志
+                        reasoningAcc += d
+                        messages[messages.count - 1].reasoning = reasoningAcc
                     case .textDelta(let d):
                         full += d
                         messages[messages.count - 1].text = full
                         // dsh：assistant/chunk 逐块入日志
                         log?.append(SessionEvent.assistantChunk, .init(turn: turnNo, step: stepNo, text: d))
-                    case .done(let text, let calls, let fr, let pt, let ct):
+                    case .done(let text, let calls, let fr, _, _):
                         if full.isEmpty, !text.isEmpty {
                             full = text
                             messages[messages.count - 1].text = text
                         }
                         toolCalls = calls
-                        usage = (pt, ct)
                         if fr == "length" { reason = "max-tokens" }
                     }
                 }
@@ -204,12 +205,13 @@ final class AgentSession: ObservableObject {
                 reason = "error"
             }
 
-            // 中断/完成都落 assistant/message（中断标 interrupted 语义）
-            let interrupted = streamError != nil
+            // 中断/完成都落 assistant/message（含思考块；中断即 dsh 的 interrupted 语义）
             let callsJSON = (try? JSONEncoder().encode(toolCalls)).flatMap { String(data: $0, encoding: .utf8) }
+            messages[messages.count - 1].reasoning = reasoningAcc.isEmpty ? nil : reasoningAcc
             log?.append(SessionEvent.assistantMessage, .init(turn: turnNo, step: stepNo,
                                                              text: full,
-                                                             toolCallsJSON: toolCalls.isEmpty ? nil : callsJSON))
+                                                             toolCallsJSON: toolCalls.isEmpty ? nil : callsJSON,
+                                                             reasoning: reasoningAcc.isEmpty ? nil : String(reasoningAcc.prefix(6000)))))
 
             if let streamError {
                 messages[messages.count - 1].text = full.isEmpty
@@ -220,9 +222,9 @@ final class AgentSession: ObservableObject {
                 return
             }
 
-            // 无工具调用 → turn 正常结束
+            // 无工具调用 → turn 正常结束（纯思考步骤保留思考区展示）
             guard !toolCalls.isEmpty else {
-                if full.isEmpty { messages.removeLast() }   // 空响应不占行
+                if full.isEmpty && reasoningAcc.isEmpty { messages.removeLast() }   // 真空响应不占行
                 log?.append(SessionEvent.stepEnd, .init(turn: turnNo, step: stepNo))
                 log?.append(SessionEvent.turnEnd, .init(turn: turnNo, reason: reason))
                 return
@@ -230,7 +232,7 @@ final class AgentSession: ObservableObject {
 
             // 历史追加 assistant(tool_calls)
             llmHistory.append(.init(role: .assistant, content: full.isEmpty ? nil : full, toolCalls: toolCalls))
-            if full.isEmpty { messages.removeLast() }    // 纯工具调用步骤不占消息行
+            if full.isEmpty { messages.removeLast() }    // 纯工具调用步骤不占消息行（思考随下步回收）
 
             // 执行工具（M3 只暴露 run_command）
             for call in toolCalls {
