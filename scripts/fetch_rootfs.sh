@@ -45,7 +45,7 @@ build_fakefsify() {
         meson setup "$NATIVE_DIR" --buildtype=release \
             -Dkernel=ish -Dengine=asbestos -Dguest_arch=arm64 -Db_ndebug=true \
             || die "native meson setup failed"
-        ninja -C "$NATIVE_DIR" fakefsify || die "fakefsify build failed"
+        ninja -C "$NATIVE_DIR" tools/fakefsify || die "fakefsify build failed"
         cd "$ROOT_DIR"
     fi
     [ -x "$NATIVE_DIR/tools/fakefsify" ] || die "fakefsify binary missing"
