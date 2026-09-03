@@ -48,9 +48,11 @@ struct RootView: View {
 
     @StateObject private var agent = AgentSession()
     @StateObject private var exec = ExecutionController()
+    @StateObject private var settings = SettingsStore.shared
     @State private var phase: Phase = .installing
     @State private var terminalShown: String = ""
     @State private var chatInput: String = ""
+    @State private var showSettings = false
     private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -68,6 +70,9 @@ struct RootView: View {
         .onReceive(timer) { _ in
             terminalShown = ConsoleHub.text
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet(onClose: { showSettings = false })
+        }
     }
 
     private var terminalWidth: CGFloat { 420 }
@@ -79,9 +84,21 @@ struct RootView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("青山")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
-                Text("M2 · Agent 干跑（大脑=脚本化假 LLM）")
+                Text("M3 · 真模型对话（大脑=DeepSeek BYOK）")
                     .font(.caption).foregroundStyle(Color.secondary)
                 Spacer()
+                Circle()
+                    .fill(settings.hasKey ? Color.green : Color.orange)
+                    .frame(width: 8, height: 8)
+                Text(settings.hasKey ? "真大脑" : "假大脑·未配 Key")
+                    .font(.caption2).foregroundStyle(Color.secondary)
+                Button {
+                    showSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 15))
+                }
+                .buttonStyle(.plain)
                 if phase == .ready {
                     Button {
                         agent.startNew(title: "新会话")

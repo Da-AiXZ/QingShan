@@ -20,15 +20,16 @@ struct SessionEventData: Codable, Equatable {
     var durationMs: Int?
     var output: String?
     var reason: String?
+    var toolCallsJSON: String?
 
     init(turn: Int? = nil, step: Int? = nil, version: Int? = nil, id: String? = nil,
          createdAt: Double? = nil, text: String? = nil, command: String? = nil,
          exitCode: Int? = nil, durationMs: Int? = nil, output: String? = nil,
-         reason: String? = nil) {
+         reason: String? = nil, toolCallsJSON: String? = nil) {
         self.turn = turn; self.step = step; self.version = version; self.id = id
         self.createdAt = createdAt; self.text = text; self.command = command
         self.exitCode = exitCode; self.durationMs = durationMs; self.output = output
-        self.reason = reason
+        self.reason = reason; self.toolCallsJSON = toolCallsJSON
     }
 }
 
@@ -47,6 +48,8 @@ struct SessionEvent: Codable, Equatable {
     static let toolCall = "tool/call"
     static let toolResult = "tool/result"
     static let turnEnd = "turn/end"
+    static let assistantChunk = "assistant/chunk"
+    static let compact = "compact"
 
     static func sessionHeader(id: String, seq: Int) -> SessionEvent {
         .init(seq: seq, type: sessionHeaderType,
