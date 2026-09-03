@@ -37,13 +37,15 @@ die()      { echo "FAIL $1" >&2; exit 1; }
 
 build_fakefsify() {
     log_step "Building fakefsify (native macOS tool)"
+    # fakefsify 依赖 libarchive（meson 探测 /opt/homebrew/opt/libarchive —— tools/meson.build 已内置该路径）
+    command -v brew >/dev/null && brew list libarchive >/dev/null 2>&1 || brew install --quiet libarchive || die "libarchive install failed"
     NATIVE_DIR="$ISH_DIR/build-native"
     if [ ! -f "$NATIVE_DIR/tools/fakefsify" ]; then
         cd "$ISH_DIR"
         meson setup "$NATIVE_DIR" --buildtype=release \
             -Dkernel=ish -Dengine=asbestos -Dguest_arch=arm64 -Db_ndebug=true \
             || die "native meson setup failed"
-        ninja -C "$NATIVE_DIR" tools/fakefsify || die "fakefsify build failed"
+        ninja -C "$NATIVE_DIR" fakefsify || die "fakefsify build failed"
         cd "$ROOT_DIR"
     fi
     [ -x "$NATIVE_DIR/tools/fakefsify" ] || die "fakefsify binary missing"
