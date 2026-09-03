@@ -70,8 +70,10 @@ struct RootView: View {
         .onReceive(timer) { _ in
             terminalShown = ConsoleHub.text
         }
-        .sheet(isPresented: $showSettings) {
-            SettingsSheet(onClose: { showSettings = false })
+        .overlay {
+            if showSettings {
+                SettingsSheet(onClose: { showSettings = false })
+            }
         }
     }
 
@@ -158,7 +160,7 @@ struct RootView: View {
                             }
                             .padding(.vertical, 40)
                         }
-                        ForEach(agent.messages) { m in
+                        ForEach(agent.messages.filter { !($0.role == .agent && $0.text.isEmpty) }) { m in
                             messageRow(m).id(m.id)
                         }
                         if agent.isThinking {

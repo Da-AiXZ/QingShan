@@ -9,6 +9,15 @@ struct SettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        ZStack {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .onTapGesture { onClose() }
+            card
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             // 头部
             HStack {
