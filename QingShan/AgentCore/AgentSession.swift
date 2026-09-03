@@ -211,7 +211,7 @@ final class AgentSession: ObservableObject {
             log?.append(SessionEvent.assistantMessage, .init(turn: turnNo, step: stepNo,
                                                              text: full,
                                                              toolCallsJSON: toolCalls.isEmpty ? nil : callsJSON,
-                                                             reasoning: reasoningAcc.isEmpty ? nil : String(reasoningAcc.prefix(6000)))))
+                                                             reasoning: reasoningAcc.isEmpty ? nil : String(reasoningAcc.prefix(6000))))
 
             if let streamError {
                 messages[messages.count - 1].text = full.isEmpty
