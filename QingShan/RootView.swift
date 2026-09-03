@@ -49,7 +49,7 @@ struct RootView: View {
         }
         .padding(20)
         .task { await run() }
-        .onReceive(NotificationCenter.default.publisher(for: QCConsoleOutputNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .QCConsoleOutput)) { _ in
             console = qcConsoleBuffer()
         }
     }
@@ -89,7 +89,7 @@ struct RootView: View {
             console = qcConsoleBuffer()
         }
         // PID1 退出后停表（防泄漏）
-        _ = NotificationCenter.default.addObserver(forName: QCProcessExitedNotification,
+        _ = NotificationCenter.default.addObserver(forName: .QCProcessExited,
                                                    object: nil, queue: .main) { _ in
             timer?.invalidate()
             console = qcConsoleBuffer()
