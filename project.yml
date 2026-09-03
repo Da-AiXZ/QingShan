@@ -1,0 +1,38 @@
+name: QingShan
+
+options:
+  bundleIdPrefix: com.qingshan
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "2"          # iPad only（iPad Pro M1 目标设备）
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""                 # CI 未签名构建不依赖团队；本机开发时填自己的 Team
+
+targets:
+  QingShan:
+    type: application
+    platform: iOS
+    sources:
+      - path: QingShan
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.qingshan.juyang
+        MARKETING_VERSION: "0.0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: QingShan/Info.plist
+      properties:
+        CFBundleDisplayName: 青山
+        CFBundleShortVersionString: "0.0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}               # 空字典 = 系统默认启动屏，避免黑边
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
