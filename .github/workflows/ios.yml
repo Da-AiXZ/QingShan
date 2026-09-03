@@ -15,8 +15,20 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.4.app || sudo xcode-select -s /Applications/Xcode.app
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install toolchain
+        run: |
+          brew install xcodegen
+          brew install meson ninja
+          # LLVM 仅 vdso 构建需要；装大件前先探测（超时兜底 15 分钟）
+          brew install --quiet llvm || echo "WARN: llvm install failed, vdso will be skipped"
+
+      - name: Build iSH static libraries
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/build_ish.sh release
+
+      - name: Prepare Alpine rootfs
+        run: ./scripts/fetch_rootfs.sh
 
       - name: Generate Xcode project
         run: xcodegen generate

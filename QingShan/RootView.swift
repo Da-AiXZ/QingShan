@@ -1,23 +1,98 @@
 import SwiftUI
 
-/// M0：流水线验证空壳。
-/// 验收标准（本阶段）：能从 GitHub Actions 产出未签名 IPA 并安装到 iPad 显示此界面。
-/// 下一阶段（M0.2）：接入 iSH 三静态库，把这里的占位文案替换为 Alpine `uname -a` 的真实输出。
+/// M0.2：iSH 接入验证。
+/// 流程：首启拷 rootfs → qc_boot() 拉起内核 → PID1 执行 uname -a → console 输出上屏。
+/// 验收标准：屏幕出现 `Linux ... aarch64 Linux` 一行（Alpine 真实 uname）。
 struct RootView: View {
+    enum Phase: Equatable {
+        case installing
+        case booting
+        case done
+        case failed(String)
+    }
+
+    @State private var phase: Phase = .installing
+    @State private var console: String = ""
+    @State private var timer: Timer?
+
     var body: some View {
-        VStack(spacing: 16) {
-            Text("青山")
-                .font(.system(size: 40, weight: .bold, design: .rounded))
-                .foregroundStyle(.primary)
-            Text("v0.0.1 · M0 流水线验证")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Divider().padding(.horizontal, 48)
-            Text("如果你能看到这个界面，说明\nWindows → GitHub Actions → IPA → iPad\n整条构建链路已经打通。")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            header
+
+            switch phase {
+            case .installing:
+                Label("正在装配 Alpine rootfs（仅首次）…", systemImage: "externaldrive.badge.timemachine")
+                    .font(.footnote).foregroundStyle(.secondary)
+            case .booting:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("内核启动中…").font(.footnote).foregroundStyle(.secondary)
+                }
+            case .done:
+                Label("Linux 已启动", systemImage: "checkmark.seal.fill")
+                    .font(.footnote).foregroundStyle(.green)
+            case .failed(let msg):
+                Label("失败：\(msg)", systemImage: "xmark.octagon.fill")
+                    .font(.footnote).foregroundStyle(.red)
+            }
+
+            // console 输出（等宽、暗底，模拟终端）
+            ScrollView {
+                Text(console.isEmpty ? "（等待 console 输出…）" : console)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(console.isEmpty ? .secondary : .green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+            .background(Color.black.opacity(0.88))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
         }
-        .padding()
+        .padding(20)
+        .task { await run() }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name(QCConsoleOutputNotification))) { _ in
+            console = qcConsoleBuffer()
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("青山").font(.system(size: 30, weight: .bold, design: .rounded))
+            Text("M0.2 · iSH 接入验证").font(.subheadline).foregroundStyle(.secondary)
+        }
+    }
+
+    private func run() async {
+        // 1. 首启装配
+        if !FirstRun.isInstalled {
+            do { try FirstRun.install() } catch {
+                phase = .failed("rootfs 装配失败：\((error as NSError).localizedDescription)")
+                return
+            }
+        }
+        phase = .booting
+
+        // 2. 拉内核（重量级，放后台线程）
+        let out: String? = await Task.detached(priority: .userInitiated) {
+            var err: NSString?
+            let rc = qc_boot(FirstRun.rootURL.path, &err)
+            return rc == 0 ? nil : (err as String?) ?? "boot rc=\(rc)"
+        }.value
+
+        if let out {
+            phase = .failed(out)
+            return
+        }
+
+        // 3. PID1 的 uname 输出走 console；轮询刷新 + 完成检测
+        phase = .done
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+            console = qcConsoleBuffer()
+        }
+        // PID1 退出后停表（防泄漏）
+        _ = NotificationCenter.default.addObserver(forName: Notification.Name(QCProcessExitedNotification),
+                                                   object: nil, queue: .main) { _ in
+            timer?.invalidate()
+            console = qcConsoleBuffer()
+        }
     }
 }

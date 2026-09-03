@@ -13,3 +13,6 @@ build.log
 
 # 下一阶段将加入：
 # Vendor/ish/build-*/   (meson 构建产物)
+
+# rootfs 下载缓存
+.cache/

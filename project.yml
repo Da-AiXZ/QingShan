@@ -9,9 +9,9 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    TARGETED_DEVICE_FAMILY: "2"          # iPad only（iPad Pro M1 目标设备）
+    TARGETED_DEVICE_FAMILY: "2"          # iPad only
     CODE_SIGN_STYLE: Automatic
-    DEVELOPMENT_TEAM: ""                 # CI 未签名构建不依赖团队；本机开发时填自己的 Team
+    DEVELOPMENT_TEAM: ""
 
 targets:
   QingShan:
@@ -19,19 +19,35 @@ targets:
     platform: iOS
     sources:
       - path: QingShan
+      # 宿主桥（ObjC，链接 iSH 静态库）
+      - path: Platform
+      # Alpine rootfs（fakefs 格式：data/ + meta.db）整体作为资源文件夹
+      - path: QingShan/Resources/rootfs
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.qingshan.juyang
         MARKETING_VERSION: "0.0.1"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: NO
+        SWIFT_OBJC_BRIDGING_HEADER: QingShan/Bridge/QingShan-Bridging-Header.h
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/include/ish"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/Vendor/libs"
+        OTHER_LDFLAGS: "-lish -lish_emu -lfakefs"
+        CLANG_ENABLE_MODULES: YES
+        # iSH 头里的 C 声明以 ObjC(.m) 编译；QCExecutor.m 需 ObjC++? 实为 .m 即可（纯 C API）
+    dependencies:
+      - sdk: libsqlite3.tbd
+      - sdk: libz.tbd
+      - sdk: libbz2.tbd
     info:
       path: QingShan/Info.plist
       properties:
         CFBundleDisplayName: 青山
         CFBundleShortVersionString: "0.0.1"
-        CFBundleVersion: "1"
-        UILaunchScreen: {}               # 空字典 = 系统默认启动屏，避免黑边
+        CFBundleVersion: "2"
+        UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
