@@ -35,11 +35,15 @@ check_prerequisites() {
     command -v ninja >/dev/null || die "ninja missing (brew install ninja)"
     xcode-select -p >/dev/null 2>&1 || die "Xcode CLT missing"
     LLVM_PREFIX="$(brew --prefix llvm 2>/dev/null || true)"
+    LLD_PREFIX="$(brew --prefix lld 2>/dev/null || true)"
     if [ -n "$LLVM_PREFIX" ] && [ -x "$LLVM_PREFIX/bin/clang" ]; then
         echo "LLVM: $LLVM_PREFIX (vdso build enabled)"
         export PATH="$LLVM_PREFIX/bin:$PATH"
     else
         echo "WARN: brew llvm not found, vdso build will be skipped"
+    fi
+    if [ -n "$LLD_PREFIX" ] && [ -d "$LLD_PREFIX/bin" ]; then
+        export PATH="$LLD_PREFIX/bin:$PATH"   # 提供 ld.lld（-fuse-ld=lld）
     fi
     log_ok "prerequisites"
 }

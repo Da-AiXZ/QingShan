@@ -19,8 +19,9 @@ jobs:
         run: |
           brew install xcodegen
           brew install meson ninja
-          # LLVM 仅 vdso 构建需要；装大件前先探测（超时兜底 15 分钟）
-          brew install --quiet llvm || echo "WARN: llvm install failed, vdso will be skipped"
+          # llvm + lld：vdso 交叉构建需要（clang -target aarch64-linux-gnu -fuse-ld=lld）
+          brew install --quiet llvm || echo "WARN: llvm install failed"
+          brew install --quiet lld || echo "WARN: lld install failed, vdso will be skipped"
 
       - name: Build iSH static libraries
         run: |
