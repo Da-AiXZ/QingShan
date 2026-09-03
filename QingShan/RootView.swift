@@ -1,5 +1,28 @@
 import SwiftUI
 
+/// 跨线程 console 缓冲：ISHKernel 输出回调写入，界面 Timer 轮询读取。
+enum ConsoleHub {
+    private static let lock = NSLock()
+    private static var _text = ""
+
+    static var text: String {
+        lock.withLock { _text }
+    }
+
+    static func append(_ s: String) {
+        lock.withLock {
+            _text += s
+            if _text.count > 64_000 {
+                _text = String(_text.suffix(32_000))
+            }
+        }
+    }
+
+    static func clear() {
+        lock.withLock { _text = "" }
+    }
+}
+
 /// M0.2：iSH 接入验证（OpenMinis 生产版 ISHKernel 驱动）。
 /// 流程：首启解包 rootfs.tar → ISHKernel.boot → 执行 `uname -a` → 输出上屏。
 struct RootView: View {
@@ -12,8 +35,9 @@ struct RootView: View {
     }
 
     @State private var phase: Phase = .installing
-    @State private var console: String = ""
+    @State private var shown: String = ""
     @State private var unameResult: String = ""
+    private let timer = Timer.publish(every: 0.3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -38,9 +62,9 @@ struct RootView: View {
             }
 
             ScrollView {
-                Text(displayText)
+                Text(shown.isEmpty ? "（等待内核输出…）" : shown)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(displayText.isEmpty ? Color.secondary : Color.green)
+                    .foregroundStyle(shown.isEmpty ? Color.secondary : Color.green)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
@@ -49,12 +73,12 @@ struct RootView: View {
         }
         .padding(20)
         .task { await run() }
+        .onReceive(timer) { _ in
+            shown = unameResult.isEmpty ? ConsoleHub.text : unameResult
+        }
     }
 
-    private var displayText: String {
-        if !unameResult.isEmpty { return unameResult }
-        return console
-    }
+    private var displayTextProxy: String { shown }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -72,23 +96,18 @@ struct RootView: View {
             }
         }
 
-        // 2. 实时收内核输出
-        ISHKernel.shared.outputCallback = { [weak self] data in
-            guard let self, let s = String(data: data, encoding: .utf8) else { return }
-            DispatchQueue.main.async {
-                self.console += s
-                if self.console.count > 64_000 {
-                    self.console = String(self.console.suffix(32_000))
-                }
+        ConsoleHub.clear()
+        ISHKernel.shared.outputCallback = { data in
+            if let s = String(data: data, encoding: .utf8) {
+                ConsoleHub.append(s)
             }
         }
 
         phase = .booting
 
-        // 3. 拉内核（重量级，后台线程；bootWithRootPath 自带完整初始化与崩溃信号处理）
-        let bootErr: String? = await Task.detached(priority: .userInitiated) { [weak self] () -> String? in
-            guard let self else { return "self gone" }
-            let rc = self.bootKernel()
+        // 2. 拉内核（重量级，后台线程；bootWithRootPath 自带完整初始化与崩溃信号处理）
+        let bootErr: String? = await Task.detached(priority: .userInitiated) { () -> String? in
+            let rc = RootView.bootKernel()
             return rc == 0 ? nil : "boot rc=\(rc)"
         }.value
 
@@ -98,16 +117,16 @@ struct RootView: View {
         }
         phase = .running
 
-        // 4. 执行验收命令（executeCommandAndWait 自带完成检测与超时）
+        // 3. 执行验收命令（executeCommandAndWait 自带完成检测与超时）
         let result = await Task.detached(priority: .userInitiated) { () -> (String, String?) in
-            var out: NSString?
-            var err: NSError?
+            var out: String?
+            var err: Error?
             ISHKernel.shared.executeCommandAndWait(
                 "uname -a; echo; echo '青山 M0.2 · Alpine/AArch64 已启动'; id; cat /etc/alpine-release",
                 timeout: 20,
-                completion: { o, e in out = o; err = e as NSError? }
+                completion: { o, e in out = o as String?; err = e }
             )
-            return (out as String? ?? "", err?.localizedDescription)
+            return (out ?? "", err?.localizedDescription)
         }.value
 
         if let err = result.1, !err.isEmpty {
@@ -118,12 +137,10 @@ struct RootView: View {
         phase = .done
     }
 
-    /// ISHKernel.boot 在 ObjC 里是非阻塞设计：需要按它自己的就绪语义等待。
-    /// 这里用轮询 isBooted 兜底（boot 线程由 ISHKernel 内部管理）。
-    private nonisolated func bootKernel() -> Int {
+    /// bootWithRootPath 返回后内核可能仍在异步初始化：轮询 isBooted 兜底（最多 30s）。
+    private static func bootKernel() -> Int32 {
         let rc = ISHKernel.shared.boot(withRootPath: FirstRun.rootURL.path)
         if rc != 0 { return rc }
-        // 等待内核完全就绪（最多 30s）
         for _ in 0..<300 {
             if ISHKernel.shared.isBooted { return 0 }
             Thread.sleep(forTimeInterval: 0.1)
