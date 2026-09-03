@@ -301,8 +301,8 @@ static NSString * QCDecodeChunk(NSData *chunk, NSMutableString *pending) {
                         dispatch_async(dispatch_get_main_queue(), ^{
                             [chunk enumerateSubstringsInRange:NSMakeRange(0, chunk.length)
                                                      options:NSStringEnumerationByLines
-                                                  usingBlock:^(NSString *line, NSRange r, NSRange *, BOOL *stop) {
-                                if (r.location != NSNotFound) [ctx.lineCallback(line, isStdErr)];
+                                                  usingBlock:^(NSString * _Nullable line, NSRange r, NSRange _, BOOL * _) {
+                                if (r.location != NSNotFound && line != nil) [ctx.lineCallback(line, isStdErr)];
                             }];
                         });
                     }
