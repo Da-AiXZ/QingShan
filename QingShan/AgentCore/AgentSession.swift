@@ -80,6 +80,9 @@ final class AgentSession: ObservableObject {
     private var allowedTools: Set<String> = []   // 会话级"始终允许"记忆
     private var approvalCont: CheckedContinuation<ApprovalDecision, Never>?
 
+    /// LLM 历史（与 UI messages 平行；OpenAI 协议形态）
+    var llmHistory: [LLMMessage] = []
+
     static let systemPrompt = """
         你是青山（QingShan），运行在用户 iPad 上的本地 AI Agent。
         环境：你的命令在设备内置的 Alpine Linux (aarch64) 沙箱中以 root 身份执行，输出会原样返回给你。
