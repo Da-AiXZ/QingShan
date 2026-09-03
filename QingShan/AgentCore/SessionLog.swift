@@ -64,14 +64,14 @@ final class SessionLog {
     /// 最近修改的会话文件 ID（resume 用）
     static func latestSessionID() -> String? {
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: [.contentModificationDateKey]) else {
+        guard let files = try? fm.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: nil) else {
             return nil
         }
-        let fm = FileManager.default
         let jsonls = files.filter { $0.pathExtension == "jsonl" }
         guard !jsonls.isEmpty else { return nil }
         let dated = jsonls.map { url -> (URL, Date) in
-            let d = (try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+            let attrs = try? fm.attributesOfItem(atPath: url.path)
+            let d = attrs?[.modificationDate] as? Date ?? .distantPast
             return (url, d)
         }
         guard let latest = dated.max(by: { $0.1 < $1.1 })?.0 else { return nil }
