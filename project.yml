@@ -34,7 +34,7 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_OBJC_BRIDGING_HEADER: QingShan/Bridge/QingShan-Bridging-Header.h
-        HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/include/ish"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/include"
         LIBRARY_SEARCH_PATHS: "$(SRCROOT)/Vendor/libs"
         OTHER_LDFLAGS: "-lish -lish_emu -lfakefs"
         CLANG_ENABLE_MODULES: YES
