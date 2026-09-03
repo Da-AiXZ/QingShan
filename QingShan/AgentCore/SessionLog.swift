@@ -67,12 +67,14 @@ final class SessionLog {
         guard let files = try? fm.contentsOfDirectory(at: sessionsDir, includingPropertiesForKeys: [.contentModificationDateKey]) else {
             return nil
         }
+        let fm = FileManager.default
         let jsonls = files.filter { $0.pathExtension == "jsonl" }
-        guard let latest = jsonls.sorted(by: {
-            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))??.contentModificationDate ?? .distantPast
-            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))??.contentModificationDate ?? .distantPast
-            return a > b
-        }).first else { return nil }
+        guard !jsonls.isEmpty else { return nil }
+        let dated = jsonls.map { url -> (URL, Date) in
+            let d = (try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+            return (url, d)
+        }
+        guard let latest = dated.max(by: { $0.1 < $1.1 })?.0 else { return nil }
         return latest.deletingPathExtension().lastPathComponent
     }
 

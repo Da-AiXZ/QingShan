@@ -125,7 +125,7 @@ final class AgentSession: ObservableObject {
 
                 if !messages.isEmpty {
                     messages[messages.count - 1].output = out
-                    messages[messages.count - 1].exitCode = code
+                    messages[messages.count - 1].exitCode = Int(code)
                     messages[messages.count - 1].durationMs = ms
                     messages[messages.count - 1].running = false
                 }
