@@ -303,7 +303,7 @@ static NSString * QCDecodeChunk(NSData *chunk, NSMutableString *pending) {
                                                      options:NSStringEnumerationByLines
                                                   usingBlock:^(NSString * _Nullable line, NSRange r, NSRange _r2, BOOL * _stop2) {
                                 (void)_r2; (void)_stop2;
-                                if (r.location != NSNotFound && line != nil) [ctx.lineCallback(line, isStdErr)];
+                                if (r.location != NSNotFound && line != nil) ctx.lineCallback(line, isStdErr);
                             }];
                         });
                     }
