@@ -21,9 +21,11 @@ targets:
       - path: QingShan
       # 宿主桥（ObjC，链接 iSH 静态库）
       - path: Platform
-      # Alpine rootfs（fakefs 格式：data/ + meta.db）整体作为资源文件夹
-      - path: QingShan/Resources/rootfs
-        type: folder
+        # 排除 rootfs.tar（由下方单文件资源引入，避免被当源码扫描）
+        excludes:
+          - "Resources/rootfs.tar"
+      # Alpine rootfs（fakefs tar：data/ + meta.db），单文件资源
+      - path: QingShan/Resources/rootfs.tar
         buildPhase: resources
     settings:
       base:

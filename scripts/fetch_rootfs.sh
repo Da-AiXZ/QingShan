@@ -101,8 +101,16 @@ EOF
     # 但 data 内真实文件的 mode 位仍整理一遍，双保险
     chmod -R u+rw "$DATA" 2>/dev/null || true
 
-    log_ok "rootfs configured at $OUT_DIR"
-    du -sh "$OUT_DIR"
+    # 打成单个 tar（ustar）：避免 folder reference 的逐文件资源冲突
+    # （apk keys 多架构同名文件会让 CpResource 冲突 exit 65）
+    cd "$OUT_DIR"
+    rm -f "$RES_DIR/rootfs.tar"
+    tar -cf "$RES_DIR/rootfs.tar" data meta.db
+    cd "$ROOT_DIR"
+    rm -rf "$OUT_DIR"
+
+    log_ok "rootfs packaged at $RES_DIR/rootfs.tar"
+    ls -lh "$RES_DIR/rootfs.tar"
 }
 
 main() {
