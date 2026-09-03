@@ -15,6 +15,7 @@
 #include "kernel/task.h"
 #include "kernel/calls.h"
 #include "kernel/fs.h"
+#include "fs/fake.h"   // ISH_INTERNAL 解锁（见 project.yml GCC_PREPROCESSOR_DEFINITIONS）
 #include "fs/tty.h"
 #include "fs/dev.h"
 #include "fs/devices.h"

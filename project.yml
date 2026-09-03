@@ -40,7 +40,7 @@ targets:
         OTHER_LDFLAGS: "-lish -lish_emu -lfakefs"
         CLANG_ENABLE_MODULES: YES
         # iSH 头文件按 GUEST_ARM64 条件编译（对齐 Vendor/ish/app/GuestARM64.xcconfig）
-        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) GUEST_ARM64=1"
+        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) GUEST_ARM64=1 ISH_INTERNAL=1"
         # iSH 头里的 C 声明以 ObjC(.m) 编译；QCExecutor.m 需 ObjC++? 实为 .m 即可（纯 C API）
     dependencies:
       - sdk: libsqlite3.tbd
