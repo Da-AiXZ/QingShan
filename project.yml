@@ -34,8 +34,8 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_OBJC_BRIDGING_HEADER: QingShan/Bridge/QingShan-Bridging-Header.h
-        # 双根：Vendor/include/ish（构建生成头）+ Vendor/ish（源码内部互 include 的根）
-        HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/include/ish $(SRCROOT)/Vendor/ish"
+        # 三根：Vendor/include/ish（生成头）+ Vendor/ish（源码内部互 include）+ Vendor/include（ish/ 前缀伞）
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/Vendor/include/ish $(SRCROOT)/Vendor/ish $(SRCROOT)/Vendor/include"
         LIBRARY_SEARCH_PATHS: "$(SRCROOT)/Vendor/libs"
         OTHER_LDFLAGS: "-lish -lish_emu -lfakefs"
         CLANG_ENABLE_MODULES: YES
