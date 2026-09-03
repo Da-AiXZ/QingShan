@@ -7,6 +7,7 @@
 
 // iSH C 接口（头路径指向 Vendor/include/ish）
 #include "fs/tty.h"
+#include "fs/devices.h"
 
 NSString *const QCConsoleOutputNotification = @"QCConsoleOutputNotification";
 

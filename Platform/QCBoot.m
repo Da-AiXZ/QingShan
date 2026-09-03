@@ -12,11 +12,10 @@
 
 #include "kernel/init.h"
 #include "kernel/calls.h"
-#include "kernel/fs.h"
+#include "kernel/fs.h"    // fakefs / procfs / devptsfs 的 extern 声明
 #include "fs/dyndev.h"
 #include "fs/devices.h"
 #include "fs/path.h"
-#include "fs/fake.h"
 #include "fs/sock.h"
 
 // die_handler 声明在 kernel/log.c（无头文件导出），照 AppDelegate.m 的用法自行 extern
@@ -25,6 +24,7 @@ extern void (*die_handler)(const char *msg);
 #import <Foundation/Foundation.h>
 #import <arpa/nameser.h>
 #import <resolv.h>
+#import <netdb.h>
 
 // 进程退出通知名 —— kernel/task.c 发出，QCExecutor 监听（声明在 QCBoot.h）
 NSString *const QCProcessExitedNotification = @"ProcessExitedNotification";
