@@ -54,7 +54,7 @@ enum MiniTar {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 continue
             case UInt8(ascii: "x"), UInt8(ascii: "g"):  // pax 头：跳过
-                try handle.seek(toOffset: dataStart + Int64(padded))
+                try handle.seek(toOffset: UInt64(dataStart + Int64(padded)))
                 readCount += Int64(padded)
                 continue
             case UInt8(ascii: "0"), 0:       // 普通文件
@@ -62,7 +62,7 @@ enum MiniTar {
                 let target = destination.appendingPathComponent(name)
                 try fm.createDirectory(at: target.deletingLastPathComponent(),
                                        withIntermediateDirectories: true)
-                let data = try handle.read(upToCount: Int64(padded)) ?? Data()
+                let data = try handle.read(upToCount: Int(padded)) ?? Data()
                 readCount += Int64(padded)
                 try data.prefix(size).write(to: target)
                 // 从 tar 头恢复权限（fakefsify 产出的 mode 已含正确执行位）
@@ -74,7 +74,7 @@ enum MiniTar {
                 // 目录无数据体
             default:                          // 硬链接(1)/符号链接(2)/其他：M0 跳过
                 if longName != nil { longName = nil }
-                try handle.seek(toOffset: dataStart + Int64(padded))
+                try handle.seek(toOffset: UInt64(dataStart + Int64(padded)))
                 readCount += Int64(padded)
             }
         }

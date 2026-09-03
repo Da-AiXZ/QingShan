@@ -7,6 +7,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// 进程退出通知（kernel/task.c 发出，QCExecutor 监听；userInfo: pid/code）
+extern NSString *const QCProcessExitedNotification;
+
 /// 启动 iSH 内核（照 AppDelegate.boot 骨架裁剪）。
 /// @param rootPath fakefs 根目录（内含 data/ 与 meta.db，来自首启解包）
 /// @param error 失败信息（可空传入）

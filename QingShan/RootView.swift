@@ -30,17 +30,17 @@ struct RootView: View {
                 }
             case .done:
                 Label("Linux 已启动", systemImage: "checkmark.seal.fill")
-                    .font(.footnote).foregroundStyle(.green)
+                    .font(.footnote).foregroundStyle(Color.green)
             case .failed(let msg):
                 Label("失败：\(msg)", systemImage: "xmark.octagon.fill")
-                    .font(.footnote).foregroundStyle(.red)
+                    .font(.footnote).foregroundStyle(Color.red)
             }
 
             // console 输出（等宽、暗底，模拟终端）
             ScrollView {
                 Text(console.isEmpty ? "（等待 console 输出…）" : console)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(console.isEmpty ? .secondary : .green)
+                    .foregroundStyle(console.isEmpty ? Color.secondary : Color.green)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }

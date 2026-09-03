@@ -9,7 +9,7 @@
 //
 
 #import "QCExecutor.h"
-#import "QCBoot.h"
+#import "QCBoot.h"   // QCProcessExitedNotification 声明在此
 
 #include "kernel/calls.h"
 #include "kernel/task.h"
@@ -79,6 +79,8 @@
 static NSMutableDictionary<NSNumber *, QCExecutionContext *> *_activeExecutions;
 static dispatch_queue_t _readerQueue;
 static dispatch_once_t _onceToken;
+
+// QCProcessExitedNotification 定义在 QCBoot.m（kernel/task.c 通知流的宿主侧转发）
 
 // Y8：按完整 UTF-8 序列截断（M0 简化版：渐进解码失败退 Latin1）
 static NSString * QCDecodeChunk(NSData *chunk, NSMutableString *pending) {

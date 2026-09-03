@@ -26,7 +26,7 @@ extern void (*die_handler)(const char *msg);
 #import <arpa/nameser.h>
 #import <resolv.h>
 
-// 进程退出通知名 —— kernel/task.c 发出，QCExecutor 监听
+// 进程退出通知名 —— kernel/task.c 发出，QCExecutor 监听（声明在 QCBoot.h）
 NSString *const QCProcessExitedNotification = @"ProcessExitedNotification";
 
 static int _booted = 0;
