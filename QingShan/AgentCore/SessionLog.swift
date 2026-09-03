@@ -16,6 +16,7 @@ struct SessionEventData: Codable, Equatable {
     var createdAt: Double?
     var text: String?
     var command: String?
+    var name: String?
     var exitCode: Int?
     var durationMs: Int?
     var output: String?
@@ -25,10 +26,11 @@ struct SessionEventData: Codable, Equatable {
 
     init(turn: Int? = nil, step: Int? = nil, version: Int? = nil, id: String? = nil,
          createdAt: Double? = nil, text: String? = nil, command: String? = nil,
-         exitCode: Int? = nil, durationMs: Int? = nil, output: String? = nil,
-         reason: String? = nil, toolCallsJSON: String? = nil, reasoning: String? = nil) {
+         name: String? = nil, exitCode: Int? = nil, durationMs: Int? = nil,
+         output: String? = nil, reason: String? = nil, toolCallsJSON: String? = nil,
+         reasoning: String? = nil) {
         self.turn = turn; self.step = step; self.version = version; self.id = id
-        self.createdAt = createdAt; self.text = text; self.command = command
+        self.createdAt = createdAt; self.text = text; self.command = command; self.name = name
         self.exitCode = exitCode; self.durationMs = durationMs; self.output = output
         self.reason = reason; self.toolCallsJSON = toolCallsJSON; self.reasoning = reasoning
     }

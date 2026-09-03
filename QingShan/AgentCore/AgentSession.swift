@@ -80,6 +80,13 @@ final class AgentSession: ObservableObject {
     private var allowedTools: Set<String> = []   // 会话级"始终允许"记忆
     private var approvalCont: CheckedContinuation<ApprovalDecision, Never>?
 
+    static let systemPrompt = """
+        你是青山（QingShan），运行在用户 iPad 上的本地 AI Agent。
+        环境：你的命令在设备内置的 Alpine Linux (aarch64) 沙箱中以 root 身份执行，输出会原样返回给你。
+        工具：run_command —— 执行一条 shell 命令。需要了解系统状态时主动使用它，不要凭空猜测。
+        要求：回复用简体中文；命令输出会原样返回给你；简洁直接，不编造输出。
+        """
+
     init() {
         policy = ApprovalPolicy(rawValue: UserDefaults.standard.string(forKey: "approval.policy") ?? "") ?? .riskyOnly
     }
