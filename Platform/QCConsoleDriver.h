@@ -9,6 +9,10 @@
 
 #import <Foundation/Foundation.h>
 
+// console 驱动本体（定义在 QCConsoleDriver.m，QCBoot.m 注册进 tty_drivers[]）
+struct tty_driver;
+extern struct tty_driver qc_console_driver;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /// console 新输出通知（userInfo: @"text" = NSString 增量）
