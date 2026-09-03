@@ -15,7 +15,6 @@
 #include "kernel/task.h"
 #include "kernel/calls.h"
 #include "kernel/fs.h"
-#include "fs/fake.h"
 #include "fs/tty.h"
 #include "fs/dev.h"
 #include "fs/devices.h"
