@@ -48,7 +48,7 @@ enum MiniTar {
 
             switch typeflag {
             case UInt8(ascii: "L"):          // GNU longname：下一条目的真名
-                let data = try handle.read(upToCount: Int64(padded)) ?? Data()
+                let data = try handle.read(upToCount: Int(padded)) ?? Data()
                 readCount += Int64(padded)
                 longName = String(data: data.prefix(size), encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
