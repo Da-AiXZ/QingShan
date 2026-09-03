@@ -73,7 +73,7 @@ final class AgentSession: ObservableObject {
             case .toolResult(_, let code, let ms, let out):
                 if messages.last?.role == .tool {
                     messages[messages.count - 1].output = out
-                    messages[messages.count - 1].exitCode = Int32(code)
+                    messages[messages.count - 1].exitCode = Int(code)
                     messages[messages.count - 1].durationMs = ms
                 }
             case .note(let t):

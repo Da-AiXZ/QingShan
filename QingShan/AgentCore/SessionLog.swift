@@ -69,8 +69,8 @@ final class SessionLog {
         }
         let jsonls = files.filter { $0.pathExtension == "jsonl" }
         guard let latest = jsonls.sorted(by: {
-            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])?.contentModificationDate) ?? .distantPast
-            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey])?.contentModificationDate) ?? .distantPast
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))??.contentModificationDate ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))??.contentModificationDate ?? .distantPast
             return a > b
         }).first else { return nil }
         return latest.deletingPathExtension().lastPathComponent
