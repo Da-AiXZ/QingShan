@@ -2,37 +2,45 @@ import Foundation
 
 /// M1 执行桥控制器：一次性命令执行 · 流式输出 · 停止 · 超时治理。
 /// 底座 = ISHShellExecutor（管道版：become_new_init_child + 双 reader 线程 + exit 通知）。
-/// 治理语义（架构 §6.2/6.4/6.5 的 M1 子集）：
-///   - stop() 立即杀 guest 进程（信号直发，不走任何可能死锁的队列）
-///   - 超时到期 → SIGKILL → completion 经 exit 通知触发 → 状态复位，可继续跑新命令（无泄漏验证点）
-/// 完整 ExecCoordinator（并发上限/进程组追杀/claimResume 单次化）在后续里程碑按需演进。
+/// 输出自动写入 ConsoleHub（右栏终端面板轮询显示）。
 final class ExecutionController: ObservableObject {
     @Published var isRunning = false
     @Published var statusLine = "就绪"
+    @Published var pendingCommand = ""
+    @Published var timeoutIdx = 0                 // 0:30s 1:120s 2:不限
 
+    private var timeouts: [Double?] = [30, 120, nil]
     private var currentPid: Int32 = 0
     private var timeoutWork: DispatchWorkItem?
-    private let guestSIGKILL: Int32 = 9   // kernel/signal.h: SIGKILL_
+    private let guestSIGKILL: Int32 = 9           // kernel/signal.h: SIGKILL_
 
-    var isReadyToRun: Bool { !isRunning }
+    func runPending() {
+        let cmd = pendingCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty, !isRunning else { return }
+        pendingCommand = ""
+        ConsoleHub.appendLine("\u{1F539} \(cmd)")
+        run(cmd, timeout: timeouts[timeoutIdx])
+    }
 
-    /// 执行一条命令。onLine 流式回调（已保证主线程）；onDone 完成时主线程回调一次。
-    func run(_ command: String,
-             timeout: TimeInterval?,
-             onLine: @escaping (String) -> Void,
-             onDone: @escaping (String) -> Void) {
+    /// 立即停止当前命令（SIGKILL 直发）
+    func stop() {
+        killCurrent()
+    }
+
+    // MARK: 私有执行路径
+
+    private func run(_ command: String, timeout: TimeInterval?) {
         guard !isRunning else {
-            onDone("已有命令在运行——先点停止或等它结束")
+            ConsoleHub.appendLine("（已有命令在运行——先停止或等它结束）")
             return
         }
         isRunning = true
         statusLine = "运行中…"
 
-        // 超时治理：到期杀进程；completion 由 exit 通知收尾
         if let timeout, timeout > 0 {
             let w = DispatchWorkItem { [weak self] in
                 guard let self, self.isRunning, self.currentPid > 0 else { return }
-                ConsoleHub.append("\n⏱ 超时（\(Int(timeout))s）—— 发送 SIGKILL\n")
+                ConsoleHub.appendLine("⏱ 超时（\(Int(timeout))s）—— 发送 SIGKILL")
                 self.killCurrent()
             }
             timeoutWork = w
@@ -40,7 +48,7 @@ final class ExecutionController: ObservableObject {
         }
 
         let pid = ISHShellExecutor.executeCommand(command, lineCallback: { line, isErr in
-            onLine((isErr ? "⃠ " : "") + line)
+            ConsoleHub.append((isErr ? "⃠ " : "") + line + "\n")
         }, completion: { [weak self] result in
             guard let self else { return }
             self.timeoutWork?.cancel()
@@ -61,7 +69,7 @@ final class ExecutionController: ObservableObject {
                 msg = "执行器错误 \(result.error.rawValue) · \(dur)"
             }
             self.statusLine = msg
-            onDone(msg)
+            ConsoleHub.appendLine("— " + msg)
         })
 
         if pid < 0 {
@@ -70,16 +78,11 @@ final class ExecutionController: ObservableObject {
             currentPid = 0
             isRunning = false
             statusLine = "启动失败 rc=\(pid)"
-            onDone(statusLine)
+            ConsoleHub.appendLine("— " + statusLine)
         } else {
             currentPid = pid
             statusLine = "运行中… pid=\(pid)"
         }
-    }
-
-    /// 立即停止当前命令（SIGKILL 直发）
-    func stop() {
-        killCurrent()
     }
 
     private func killCurrent() {
