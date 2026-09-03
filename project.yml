@@ -45,6 +45,7 @@ targets:
       - sdk: libsqlite3.tbd
       - sdk: libz.tbd
       - sdk: libbz2.tbd
+      - sdk: libresolv.tbd
     info:
       path: QingShan/Info.plist
       properties:
