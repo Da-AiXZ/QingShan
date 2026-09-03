@@ -28,7 +28,7 @@ ALPINE_MINOR="0"
 ALPINE_ARCH="aarch64"
 ALPINE_MIRROR="https://dl-cdn.alpinelinux.org/alpine"
 ROOTFS_FILE="alpine-minirootfs-${ALPINE_VERSION}.${ALPINE_MINOR}-${ALPINE_ARCH}.tar.gz"
-ROOTFS_URL="$ALPINE_MIRROR/v${ALPINE_VERSION}/releases/${ARCHS}/${ROOTFS_FILE}"
+ROOTFS_URL="$ALPINE_MIRROR/v${ALPINE_VERSION}/releases/${ALPINE_ARCH}/${ROOTFS_FILE}"
 
 CACHE_DIR="$ROOT_DIR/.cache"
 log_step() { echo "==> $1"; }
