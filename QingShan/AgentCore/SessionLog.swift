@@ -1,34 +1,67 @@
 import Foundation
 
-// MARK: - 会话事件（SessionLog JSONL 的行格式）
+// MARK: - 会话事件（v2：dsh 对齐行格式）
 //
-// 语义照搬 Codex Rollout：append-only、不可变；resume 时反向重放还原状态。
-// Swift 5.5+ 自动合成带关联值 enum 的 Codable。
+// 行结构 = {seq, type, data}；首行 = {seq:0, type:"session", data:{version,id,createdAt}}。
+// 事件名/语义照 dsh（packages/core/agent-loop + session-persistence-jsonl）：
+//   turn/start · step/start · step/end · user/message · assistant/message ·
+//   tool/call · tool/result · turn/end(带 reason)。
+// 详细对照见仓库根「dsh语义对照笔记.md」。M2 首版旧格式（{ts,kind}）不再支持。
 
-struct SessionEvent: Codable {
-    var ts: Double
-    var kind: Kind
+struct SessionEventData: Codable, Equatable {
+    var turn: Int?
+    var step: Int?
+    var version: Int?
+    var id: String?
+    var createdAt: Double?
+    var text: String?
+    var command: String?
+    var exitCode: Int?
+    var durationMs: Int?
+    var output: String?
+    var reason: String?
 
-    enum Kind: Codable {
-        case sessionStart(title: String)
-        case userMessage(text: String)
-        case agentMessage(text: String)
-        case toolStart(command: String)
-        case toolResult(command: String, exitCode: Int, durationMs: Int, output: String)
-        case note(text: String)
-    }
-
-    static func now(_ kind: Kind) -> SessionEvent {
-        SessionEvent(ts: Date().timeIntervalSince1970, kind: kind)
+    init(turn: Int? = nil, step: Int? = nil, version: Int? = nil, id: String? = nil,
+         createdAt: Double? = nil, text: String? = nil, command: String? = nil,
+         exitCode: Int? = nil, durationMs: Int? = nil, output: String? = nil,
+         reason: String? = nil) {
+        self.turn = turn; self.step = step; self.version = version; self.id = id
+        self.createdAt = createdAt; self.text = text; self.command = command
+        self.exitCode = exitCode; self.durationMs = durationMs; self.output = output
+        self.reason = reason
     }
 }
 
-// MARK: - SessionLog：一行一事件的 JSONL 读写
+struct SessionEvent: Codable, Equatable {
+    var seq: Int
+    var type: String
+    var data: SessionEventData
+
+    // dsh 风格事件名
+    static let sessionHeaderType = "session"
+    static let turnStart = "turn/start"
+    static let stepStart = "step/start"
+    static let stepEnd = "step/end"
+    static let userMessage = "user/message"
+    static let assistantMessage = "assistant/message"
+    static let toolCall = "tool/call"
+    static let toolResult = "tool/result"
+    static let turnEnd = "turn/end"
+
+    static func sessionHeader(id: String, seq: Int) -> SessionEvent {
+        .init(seq: seq, type: sessionHeaderType,
+              data: .init(version: 0, id: id, createdAt: Date().timeIntervalSince1970))
+    }
+}
+
+// MARK: - SessionLog：一行一事件 JSONL（append-only + 崩溃残行容错）
 
 final class SessionLog {
     let sessionID: String
     let url: URL
     private let queue = DispatchQueue(label: "qingshan.sessionlog")
+    private var nextSeq: Int = 0
+    private var headerWritten = false
 
     static var sessionsDir: URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -42,20 +75,30 @@ final class SessionLog {
         url = Self.sessionsDir.appendingPathComponent("\(sessionID).jsonl")
     }
 
-    /// 追加一个事件（原子行写入；失败静默——M2 记录失败不阻塞会话）
-    func append(_ kind: SessionEvent.Kind) {
-        let ev = SessionEvent.now(kind)
+    /// 追加事件（自动分配 seq；首事件自动写 session header 行）
+    func append(_ type: String, _ data: SessionEventData) {
         queue.sync {
-            guard var data = try? JSONEncoder().encode(ev) else { return }
-            data.append(0x0A) // \n
-            if !FileManager.default.fileExists(atPath: url.path) {
-                FileManager.default.createFile(atPath: url.path, contents: nil)
+            if !headerWritten {
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    FileManager.default.createFile(atPath: url.path, contents: nil)
+                }
+                writeLine(SessionEvent.sessionHeader(id: sessionID, seq: 0))
+                nextSeq = 1
+                headerWritten = true
             }
-            if let fh = try? FileHandle(forWritingTo: url) {
-                defer { try? fh.close() }
-                _ = try? fh.seekToEnd()
-                try? fh.write(contentsOf: data)
-            }
+            writeLine(SessionEvent(seq: nextSeq, type: type, data: data))
+            nextSeq += 1
+        }
+    }
+
+    private func writeLine(_ event: SessionEvent) {
+        guard var data = try? JSONEncoder().encode(event), var line = String(data: data, encoding: .utf8) else { return }
+        line.append("\n")
+        guard let lineData = line.data(using: .utf8) else { return }
+        if let fh = try? FileHandle(forWritingTo: url) {
+            defer { try? fh.close() }
+            _ = try? fh.seekToEnd()
+            try? fh.write(contentsOf: lineData)
         }
     }
 
@@ -78,7 +121,8 @@ final class SessionLog {
         return latest.deletingPathExtension().lastPathComponent
     }
 
-    /// 全量重放：按顺序解码所有事件（append-only，顺序即时间线）
+    /// 全量重放：逐行解码；解析失败的行（crash 半行等）静默丢弃——即截断修复语义。
+    /// 旧格式（M2 首版 {ts,kind}）解码失败同样被丢弃。
     static func replay(sessionID: String) -> [SessionEvent] {
         let url = sessionsDir.appendingPathComponent("\(sessionID).jsonl")
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return [] }
