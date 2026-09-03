@@ -117,7 +117,22 @@ struct RootView: View {
         }
         phase = .running
 
-        // 3. 执行验收命令（executeCommandAndWait 自带完成检测与超时）
+        // 3. 启动交互式 shell（executeCommand 负责起 PTY + /bin/sh；
+        //    不先起 shell，executeCommandAndWait 的输入无人接收）
+        let shellErr: Int32 = await Task.detached(priority: .userInitiated) { () -> Int32 in
+            let rc = ISHKernel.shared.executeCommand(["/bin/sh", "-l"])
+            if rc != 0 { return rc }
+            // 给 shell 一点启动时间（提示符出现前注入命令会被回显吞掉）
+            Thread.sleep(forTimeInterval: 1.5)
+            return 0
+        }.value
+
+        if shellErr != 0 {
+            phase = .failed("shell 启动失败 rc=\(shellErr)")
+            return
+        }
+
+        // 4. 执行验收命令（executeCommandAndWait 自带完成检测与超时）
         let result = await Task.detached(priority: .userInitiated) { () -> (String, String?) in
             var out: String?
             var err: Error?
