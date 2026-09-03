@@ -177,32 +177,51 @@ final class AgentSession: ObservableObject {
             var toolCalls: [LLMToolCall] = []
             var streamError: String?
 
-            do {
-                let adapter = makeAdapter()
-                let stream = adapter.stream(messages: llmHistory, tools: [Self.runCommandTool])
-                for try await ev in stream {
-                    switch ev {
-                    case .reasoningDelta(let d):
-                        // 思考增量：实时上屏（dim 区），整块入 assistant/message 日志
-                        reasoningAcc += d
-                        messages[messages.count - 1].reasoning = reasoningAcc
-                    case .textDelta(let d):
-                        full += d
-                        messages[messages.count - 1].text = full
-                        // dsh：assistant/chunk 逐块入日志
-                        log?.append(SessionEvent.assistantChunk, .init(turn: turnNo, step: stepNo, text: d))
-                    case .done(let text, let calls, let fr, _, _):
-                        if full.isEmpty, !text.isEmpty {
-                            full = text
-                            messages[messages.count - 1].text = text
+            // LLM 调用（限流/服务器错误自动退避重试，对齐 dsh llm-retry 语义：最多 3 次）
+            var attempt = 0
+            while true {
+                attempt += 1
+                var hadDelta = false
+                do {
+                    let adapter = makeAdapter()
+                    let stream = adapter.stream(messages: llmHistory, tools: [Self.runCommandTool])
+                    for try await ev in stream {
+                        switch ev {
+                        case .reasoningDelta(let d):
+                            // 思考增量：实时上屏（dim 区），整块入 assistant/message 日志
+                            reasoningAcc += d
+                            messages[messages.count - 1].reasoning = reasoningAcc
+                        case .textDelta(let d):
+                            hadDelta = true
+                            full += d
+                            messages[messages.count - 1].text = full
+                            // dsh：assistant/chunk 逐块入日志
+                            log?.append(SessionEvent.assistantChunk, .init(turn: turnNo, step: stepNo, text: d))
+                        case .done(let text, let calls, let fr, _, _):
+                            if full.isEmpty, !text.isEmpty {
+                                full = text
+                                messages[messages.count - 1].text = text
+                            }
+                            toolCalls = calls
+                            if fr == "length" { reason = "max-tokens" }
                         }
-                        toolCalls = calls
-                        if fr == "length" { reason = "max-tokens" }
                     }
+                } catch {
+                    // 可重试判定：限流/服务器类错误且本轮还没有流式正文时
+                    let desc = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    let retryable = attempt < 3 && full.isEmpty && !hadDelta
+                        && (desc.contains("429") || desc.contains("500") || desc.contains("502")
+                            || desc.contains("503") || desc.contains("rate_limit") || desc.contains("Rate"))
+                    if retryable {
+                        let backoff = UInt64(2 * attempt * attempt)   // 2s/8s/18s
+                        ConsoleHub.appendLine("⚠ LLM 调用受限（\(desc.prefix(80))），\(backoff/1000000000)s 后自动重试（第 \(attempt)/3 次）…")
+                        try? await Task.sleep(nanoseconds: backoff)
+                        continue
+                    }
+                    streamError = desc
+                    reason = "error"
                 }
-            } catch {
-                streamError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                reason = "error"
+                break
             }
 
             // 中断/完成都落 assistant/message（含思考块；中断即 dsh 的 interrupted 语义）
