@@ -20,7 +20,7 @@ final class DeepSeekAdapter: LLMAdapter {
     private let apiKey: String
     private let model: String
 
-    init(settings: SettingsStore) {
+    @MainActor init(settings: SettingsStore) {
         self.name = "DeepSeek · \(settings.model)"
         self.baseURL = settings.baseURL.trimmingCharacters(in: .whitespaces)
         self.apiKey = settings.apiKey.trimmingCharacters(in: .whitespaces)

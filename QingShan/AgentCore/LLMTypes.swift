@@ -21,7 +21,7 @@ struct LLMToolCall: Codable, Equatable {
     var arguments: String
 }
 
-struct LLMToolDef: Codable {
+struct LLMToolDef {
     var name: String
     var description: String
     /// JSON Schema 对象（透传给 API 的 tools[].function.parameters）

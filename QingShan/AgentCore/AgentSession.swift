@@ -95,9 +95,9 @@ final class AgentSession: ObservableObject {
                    let data = json.data(using: .utf8),
                    let calls = try? JSONDecoder().decode([LLMToolCall].self, from: data) {
                     llmHistory.append(.init(role: .assistant, content: ev.data.text, toolCalls: calls))
-                    if ev.data.text?.isEmpty == false {
+                    if let t = ev.data.text, !t.isEmpty {
                         // 少见：工具调用同时带文本，也上屏
-                        messages.append(.agent(ev.data.text))
+                        messages.append(.agent(t))
                     }
                 } else if let t = ev.data.text {
                     messages.append(.agent(t))
@@ -265,7 +265,6 @@ final class AgentSession: ObservableObject {
         reason = "max-steps"
         messages.append(.agent("（步数护栏触发：\(maxSteps) 步未收敛，turn 终止。）"))
         log?.append(SessionEvent.turnEnd, .init(turn: turnNo, reason: reason))
-        _ = rowId
     }
 
     // MARK: auto-compact（简化版：字符估算 + 单次摘要）
