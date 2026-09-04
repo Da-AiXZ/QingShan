@@ -495,6 +495,7 @@ struct ComposerBar: View {
     let ctxUsed: Double
     let activeProject: Project?
     let sessionMeta: [String: String]
+    var sandboxFiles: [String] = []
     let onSend: () -> Void
     let onAssignProject: (Project?) -> Void
     let onNewProject: () -> Void
@@ -527,7 +528,7 @@ struct ComposerBar: View {
     }
 
     private var atItems: [MentionItem] {
-        MockData.workspaceFiles
+        sandboxFiles
             .filter { input.hasPrefix("@") && $0.lowercased().contains(String(input.dropFirst()).lowercased()) }
             .prefix(8)
             .map { f in MentionItem(cmd: "@\(f)", desc: "引用文件") {
@@ -543,7 +544,9 @@ struct ComposerBar: View {
                 MentionMenuView(items: slashItems.filter { q.isEmpty || $0.cmd.contains(q) })
                     .padding(.bottom, 8)
             } else if input.hasPrefix("@") {
-                MentionMenuView(items: Array(atItems))
+                MentionMenuView(items: atItems.isEmpty
+                                ? [MentionItem(cmd: "@", desc: "沙箱中暂无可引用文件（root 目录为空）", action: {})]
+                                : atItems)
                     .padding(.bottom, 8)
             }
 

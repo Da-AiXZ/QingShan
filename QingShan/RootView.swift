@@ -56,6 +56,11 @@ struct RootView: View {
     @State private var panel: String? = nil          // settings|memories|tasks|plugins|newproject
     @State private var tabs: [String] = []
     @State private var atb: String? = nil
+    @State private var leftCol = false
+    @State private var rightCol = false
+    @State private var leftW: CGFloat = 252
+    @State private var rightW: CGFloat = 400
+    @State private var sandboxFiles: [String] = []
     private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     private var activeProject: Project? { ProjectStore.project(of: agent.sessionID) }
@@ -65,25 +70,38 @@ struct RootView: View {
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                SidebarView(activeID: agent.sessionID,
-                            onSelect: { agent.load(sessionID: $0); store.refresh() },
-                            onNewChat: { newChat(in: nil) },
-                            onNewChatIn: { pid in
-                                newChat(in: pid)
-                            },
-                            onOpenPanel: { panel = $0 },
-                            store: store)
-                    .frame(width: 252)
+                if leftCol {
+                    collapseRail(side: "left")
+                        .frame(width: 44)
+                } else {
+                    SidebarView(activeID: agent.sessionID,
+                                onSelect: { agent.load(sessionID: $0); store.refresh() },
+                                onNewChat: { newChat(in: nil) },
+                                onNewChatIn: { pid in
+                                    newChat(in: pid)
+                                },
+                                onOpenPanel: { panel = $0 },
+                                onCollapse: { leftCol = true },
+                                store: store)
+                        .frame(width: leftW)
+                }
 
-                Divider().overlay(Color.black.opacity(0.08))
+                dragHandle(side: "left")
+                    .frame(width: 5)
 
                 mainPane
                     .frame(maxWidth: .infinity)
 
-                Divider().overlay(Color.black.opacity(0.08))
+                dragHandle(side: "right")
+                    .frame(width: 5)
 
-                rightPane
-                    .frame(width: 400)
+                if rightCol {
+                    collapseRail(side: "right")
+                        .frame(width: 44)
+                } else {
+                    rightPane
+                        .frame(width: rightW)
+                }
             }
 
             ToastOverlay().zIndex(40)
@@ -105,6 +123,44 @@ struct RootView: View {
             ProjectStore.assign(sessionID: agent.sessionID, projectID: pid)
         }
         store.refresh()
+    }
+
+    // MARK: 收起 rail（HTML .rail 对齐：细条 + 展开按钮）
+
+    private func collapseRail(side: String) -> some View {
+        VStack {
+            Button {
+                if side == "left" { leftCol = false } else { rightCol = false }
+            } label: {
+                Image(systemName: side == "left" ? "sidebar.leading" : "sidebar.trailing")
+                    .font(.system(size: 16))
+                    .foregroundStyle(Color(hex: 0x6E6B64))
+                    .frame(width: 40, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .padding(.top, 12)
+        .background(Color(hex: 0xEFEEE9))
+    }
+
+    // MARK: 拖拽调宽分隔条（HTML .rz 对齐）
+
+    private func dragHandle(side: String) -> some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.06))
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { v in
+                        if side == "left" {
+                            leftW = min(420, max(180, leftW + v.translation.width))
+                        } else {
+                            rightW = min(620, max(260, rightW - v.translation.width))
+                        }
+                    }
+            )
     }
 
     // MARK: 主区（ctxbar + 消息流/hero + composer）
@@ -162,7 +218,8 @@ struct RootView: View {
                                 ToastCenter.shared.show("已切换到分支 \(b)", kind: .info)
                             },
                             onOpenPanel: { panel = $0 },
-                            onSlashCommand: handleSlash)
+                            onSlashCommand: handleSlash,
+                            sandboxFiles: sandboxFiles)
             }
         }
     }
@@ -561,11 +618,16 @@ struct RootView: View {
         }
     }
 
-    // 文件 tab（点击 → 终端 cat 预览，真数据）
+    // 文件 tab（沙箱真实文件；点击 → 终端 cat 预览）
     private var filesTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(MockData.workspaceFiles, id: \.self) { f in
+                if sandboxFiles.isEmpty {
+                    Text("沙箱中暂无文件")
+                        .font(.system(size: 11.5)).foregroundStyle(Color(hex: 0xA8A49C))
+                        .padding(.vertical, 20)
+                }
+                ForEach(sandboxFiles, id: \.self) { f in
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text").font(.system(size: 10)).foregroundStyle(Color.secondary)
                         Text(f).font(.system(size: 12, design: .monospaced)).lineLimit(1)
@@ -649,6 +711,14 @@ struct RootView: View {
         }
         store.refresh()
         phase = .ready
+
+        // 沙箱真实文件列表（@ 引用与文件 tab 数据源；ls 一次缓存）
+        _ = await Task.detached(priority: .utility) { () -> [String] in
+            let r = ISHShellExecutor.executeCommandSync(
+                "find /root /etc /tmp -maxdepth 2 -type f 2>/dev/null | grep -v '^/root/.ash_history' | head -60",
+                timeout: 8, lineCallback: nil)
+            return r.output.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        }.value
     }
 
     private static func bootKernel() -> Int32 {

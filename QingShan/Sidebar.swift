@@ -16,16 +16,10 @@ enum ProjectStore {
     static let KEY = "sess.project.map"
     static let PKEY = "projects.v1"
 
-    static let seed: [Project] = [
-        Project(id: "p1", name: "KimiReader", colorHex: 0xE0833C, pinned: true, git: true),
-        Project(id: "p2", name: "WalletKit", colorHex: 0x5B8DEF, pinned: false, git: true),
-        Project(id: "p3", name: "PersonalSite", colorHex: 0x2F9E6E, pinned: false, git: false),
-    ]
-
     static var projects: [Project] {
         get {
             guard let d = UserDefaults.standard.data(forKey: PKEY),
-                  let ps = try? JSONDecoder().decode([Project].self, from: d), !ps.isEmpty else { return seed }
+                  let ps = try? JSONDecoder().decode([Project].self, from: d) else { return [] }
             return ps
         }
         set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: PKEY) }
@@ -80,24 +74,30 @@ struct SessRowItem: Identifiable {
     var running: Bool = false
 }
 
-// MARK: - mock 统计（HTML TASKS/PLUGINS/MEM_STATS 对齐；M6/M7 换真数据）
+// MARK: - 建议卡文案（hero 功能数据，非假状态）
 
 enum MockData {
-    static var tasksActive = 3
-    static var pluginsOn = 3
-    static var memCount = 12
     static let suggestions: [(icon: String, b: String, s: String, fill: String)] = [
         ("magnifyingglass", "探索并理解代码", "梳理模块结构与关键调用链", "帮我梳理项目的模块结构和关键调用链"),
         ("bolt", "构建新功能", "从需求到可运行代码", "给项目加一个实用的新功能"),
         ("wrench", "重构代码", "迁移到更现代的方案", "把项目里的旧式日志迁移到统一日志系统"),
         ("exclamationmark.triangle", "修复问题", "定位并修掉 bug", "帮我定位并修复一个偶发问题"),
     ]
-    static let workspaceFiles = [
-        "Sources/App/AppDelegate.swift", "Sources/Player/AudioPlayer.swift",
-        "Sources/Core/Logging/LoggerFacade.swift", "Sources/Core/Download/DownloadManager.swift",
-        "Sources/UI/LibraryView.swift", "Package.swift", "README.md", "AGENTS.md",
-    ]
-    static let branches = ["main", "agent/nslog-migration", "feature/speed-memory", "fix/lockscreen-progress"]
+
+    /// 分支列表：main（真实默认）+ 用户创建（持久化）。无 git 仓库前只有 main。
+    static var branches: [String] {
+        var b = UserDefaults.standard.stringArray(forKey: "branches.user") ?? []
+        b.insert("main", at: 0)
+        return b
+    }
+    static func addBranch(_ name: String) {
+        var b = UserDefaults.standard.stringArray(forKey: "branches.user") ?? []
+        if !b.contains(name) { b.append(name) }
+        UserDefaults.standard.set(b, forKey: "branches.user")
+    }
+
+    /// 沙箱真实文件列表（RootView ready 后 ls 一次缓存）
+    static var sandboxFiles: [String] = []
 }
 
 // MARK: - 完整左栏（HTML Sidebar 对齐：搜索/项目分组/pin/重命名/展开/badge）
@@ -108,6 +108,7 @@ struct SidebarView: View {
     let onNewChat: () -> Void
     let onNewChatIn: (String) -> Void
     let onOpenPanel: (String) -> Void
+    var onCollapse: (() -> Void)? = nil
 
     @State private var query = ""
     @State private var openProjs: [String: Bool] = [:]
@@ -121,6 +122,13 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             // side-hd
             HStack(spacing: 8) {
+                if let onCollapse {
+                    Button(action: onCollapse) {
+                        Image(systemName: "sidebar.leading").font(.system(size: 14))
+                            .foregroundStyle(Color(hex: 0x6E6B64))
+                    }
+                    .buttonStyle(.plain)
+                }
                 Text("Agent")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(Color(hex: 0x242420))
@@ -185,9 +193,9 @@ struct SidebarView: View {
 
             // side-ft
             VStack(spacing: 1) {
-                ftItem("clock", "任务队列", "\(MockData.tasksActive)", "tasks")
-                ftItem("puzzlepiece", "插件 MCP", "\(MockData.pluginsOn) 启用", "plugins")
-                ftItem("brain", "记忆", "\(MockData.memCount)", "memories")
+                ftItem("clock", "任务队列", nil, "tasks")
+                ftItem("puzzlepiece", "插件 MCP", nil, "plugins")
+                ftItem("brain", "记忆", nil, "memories")
                 ftItem("slider.horizontal.3", "设置", nil, "settings")
             }
             .padding(.vertical, 6)

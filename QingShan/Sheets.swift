@@ -81,21 +81,27 @@ struct SettingRow: View {
 
 // MARK: - 记忆弹层
 
-struct MemoriesSheetData {
-    static let quota = "1,240 / 4,000"
-    static let items: [(String, Int, String, Int)] = [
-        ("日志统一走 LoggerFacade 门面，禁止在业务代码直接调用 os.Logger", 8, "2 天前", 19),
-        ("网络层错误统一映射为 ReaderError，UI 层不吞错、只展示", 5, "5 天前", 9),
-        ("界面文案使用简体中文，Agent 术语保留英文原味", 3, "12 天前", 4),
-        ("提交信息遵循 Conventional Commits，scope 用模块名", 1, "20 天前", 1),
-    ]
-    static let agentsMD = """
-    # AGENTS.md — KimiReader
-    - 架构：SwiftUI + TCA，模块化 SPM 包
-    - 日志：一律使用 LoggerFacade（见 Docs/Logging.md）
-    - 测试：改动 Core 模块必须跑 xcodebuild test
-    - 禁止改动 Pods/ 与 DerivedData/
-    """
+
+// MARK: - 诚实空态（功能未交付前不展示假数据）
+
+struct SheetEmptyState: View {
+    let icon: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 26))
+                .foregroundStyle(Color(hex: 0xC9C6BE))
+            Text(title).font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(hex: 0x4A4840))
+            Text(detail).font(.system(size: 11.5))
+                .foregroundStyle(Color(hex: 0xA8A49C))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+    }
 }
 
 struct MemoriesSheet: View {
@@ -104,64 +110,11 @@ struct MemoriesSheet: View {
     var body: some View {
         SheetShell(title: "记忆", icon: "brain", onClose: onClose) {
             AnyView(
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 8) {
-                        statCard("1,240 / 4,000", "摘要 token 配额", .primary)
-                        statCard("12", "记忆条目", .primary)
-                        statCard("5", "近期被引用", .primary)
-                        statCard("2", "即将淘汰", Color(hex: 0xD97706))
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("AGENTS.md · 项目指令（每次对话恒定注入）", systemImage: "book")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(MemoriesSheetData.agentsMD)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.secondary)
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(hex: 0xF6F5F0))
-                    .cornerRadius(10)
-
-                    ForEach(Array(MemoriesSheetData.items.enumerated()), id: \.offset) { _, m in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(m.0).font(.system(size: 12.5))
-                            HStack(spacing: 12) {
-                                Text("被引用 \(m.1) 次").font(.caption2).foregroundStyle(Color.secondary)
-                                Text("上次使用 \(m.2)").font(.caption2).foregroundStyle(Color.secondary)
-                                Spacer()
-                                Text("\(m.3) 天后淘汰")
-                                    .font(.caption2)
-                                    .foregroundStyle(m.3 <= 4 ? Color.red : m.3 <= 9 ? Color(hex: 0xD97706) : Color.green)
-                            }
-                            GeometryReader { geo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.black.opacity(0.06))
-                                    Capsule().fill(Color(hex: m.3 <= 4 ? 0xB3403A : m.3 <= 9 ? 0xD97706 : 0x2F7D4F))
-                                        .frame(width: geo.size.width * CGFloat(m.3) / 21.0)
-                                }
-                            }
-                            .frame(height: 4)
-                        }
-                        .padding(10)
-                        .background(Color(hex: 0xFBFaf7))
-                        .cornerRadius(10)
-                    }
-                }
+                SheetEmptyState(icon: "brain",
+                                title: "暂无记忆条目",
+                                detail: "记忆系统将在 M6 交付：Agent 会自动提炼重要事实，\n按主题组织、可查看可编辑，并支持淘汰。")
             )
         }
-    }
-
-    private func statCard(_ v: String, _ l: String, _ c: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(v).font(.system(size: 13, weight: .semibold)).foregroundStyle(c)
-            Text(l).font(.system(size: 10)).foregroundStyle(Color.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .background(Color(hex: 0xF6F5F0))
-        .cornerRadius(9)
     }
 }
 
@@ -169,43 +122,13 @@ struct MemoriesSheet: View {
 
 struct TasksSheet: View {
     let onClose: () -> Void
-    private let tasks: [(String, String, String)] = [
-        ("每晚 02:00 跑全量单元测试", "cron · 0 2 * * *", "运行中"),
-        ("每周一汇总依赖更新并开 PR", "cron · 0 9 * * 1", "运行中"),
-        ("日志迁移剩余文件收尾", "一次性 · 今天 15:30", "排队"),
-        ("清理 30 天前的构建产物", "cron · 0 4 * * 0", "已暂停"),
-    ]
 
     var body: some View {
         SheetShell(title: "任务队列与定时任务", icon: "clock", onClose: onClose) {
             AnyView(
-                VStack(spacing: 8) {
-                    ForEach(Array(tasks.enumerated()), id: \.offset) { _, t in
-                        HStack(spacing: 10) {
-                            Image(systemName: t.2 == "已暂停" ? "archivebox" : "clock")
-                                .font(.system(size: 14)).foregroundStyle(Color.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(t.0).font(.system(size: 12.5, weight: .medium))
-                                Text(t.1).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.secondary)
-                            }
-                            Spacer()
-                            Text(t.2).font(.caption2)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(t.2 == "运行中" ? Color.green.opacity(0.15) : Color.black.opacity(0.06))
-                                .foregroundStyle(t.2 == "运行中" ? Color.green : Color.secondary)
-                                .cornerRadius(6)
-                        }
-                        .padding(10)
-                        .background(Color(hex: 0xFBFaF7))
-                        .cornerRadius(10)
-                    }
-                    HStack(spacing: 6) {
-                        Image(systemName: "bolt").font(.system(size: 11))
-                        Text("定时任务在设备接入电源且闲置时执行。").font(.caption2)
-                    }
-                    .foregroundStyle(Color.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                SheetEmptyState(icon: "clock",
+                                title: "暂无任务",
+                                detail: "任务队列与定时任务将在 M7 交付：\n可安排 cron 定时任务与一次性任务。")
             )
         }
     }
@@ -215,44 +138,13 @@ struct TasksSheet: View {
 
 struct PluginsSheet: View {
     let onClose: () -> Void
-    @State private var plugins: [(String, String, Bool)] = [
-        ("git-mcp", "仓库读写、历史与 blame 检索", true),
-        ("xcodebuild-mcp", "构建、测试、签名与设备部署", true),
-        ("web-fetch", "联网抓取文档与 release notes", true),
-        ("fs-watcher", "监听工作区文件变更并增量索引", false),
-        ("sqlite-mcp", "查询本地 CoreData 快照", false),
-    ]
 
     var body: some View {
         SheetShell(title: "插件 · MCP", icon: "puzzlepiece.fill", onClose: onClose) {
             AnyView(
-                VStack(spacing: 8) {
-                    ForEach(Array(plugins.enumerated()), id: \.offset) { i, p in
-                        HStack(spacing: 10) {
-                            Image(systemName: "puzzlepiece.fill")
-                                .font(.system(size: 14)).foregroundStyle(Color.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(p.0).font(.system(size: 12.5, weight: .medium, design: .monospaced))
-                                Text(p.1).font(.system(size: 11)).foregroundStyle(Color.secondary)
-                            }
-                            Spacer()
-                            ToggleSw(on: p.2) { plugins[i].2.toggle() }
-                        }
-                        .padding(10)
-                        .background(Color(hex: 0xFBFaF7))
-                        .cornerRadius(10)
-                    }
-                    Button {
-                        ToastCenter.shared.show("添加 MCP 服务器在 M7 交付", kind: .info)
-                    } label: {
-                        Label("添加 MCP 服务器", systemImage: "plus")
-                            .font(.footnote)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .padding(.top, 4)
-                }
+                SheetEmptyState(icon: "puzzlepiece",
+                                title: "暂无插件",
+                                detail: "MCP 插件将在 M7 交付（架构已预留模块接口）：\n届时可添加 MCP 服务器扩展 Agent 能力。")
             )
         }
     }
@@ -262,36 +154,13 @@ struct PluginsSheet: View {
 
 struct SkillsSheet: View {
     let onClose: () -> Void
-    private let skills: [(String, String)] = [
-        ("swift-refactor", "Swift 代码迁移与现代化改写"),
-        ("xcode-build", "构建诊断与警告清理"),
-        ("code-review", "逐行审查 diff 并给出风险意见"),
-        ("doc-writer", "为模块补全文档与使用示例"),
-    ]
 
     var body: some View {
         SheetShell(title: "技能", icon: "bolt.fill", onClose: onClose) {
             AnyView(
-                VStack(spacing: 8) {
-                    ForEach(skills, id: \.0) { s in
-                        HStack(spacing: 10) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 13)).foregroundStyle(Color(hex: 0xD97706))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.0).font(.system(size: 12.5, weight: .medium, design: .monospaced))
-                                Text(s.1).font(.system(size: 11)).foregroundStyle(Color.secondary)
-                            }
-                            Spacer()
-                            Text("已安装").font(.caption2)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Color.green.opacity(0.14)).foregroundStyle(Color.green)
-                                .cornerRadius(6)
-                        }
-                        .padding(10)
-                        .background(Color(hex: 0xFBFaF7))
-                        .cornerRadius(10)
-                    }
-                }
+                SheetEmptyState(icon: "bolt",
+                                title: "暂无技能",
+                                detail: "技能系统将在 M7 交付：\n可安装领域技能包增强 Agent 的专业能力。")
             )
         }
     }
