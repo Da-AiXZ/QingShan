@@ -82,3 +82,62 @@ step():                                     ← 一步 = 一次 LLM 调用及其
 - tools（M4）：读 `packages/core/tools` + `shell` 后补
 - session-turn-outline / session-title（M4+ UI 用）
 - subagent / skill / todo / jobs（M7）：读对应包后补
+
+---
+
+# M4.5 施工图：HTML 稿全量对齐清单（2026-09-04）
+
+> HTML 稿 = agent-prototype.html（用户更新版，134KB/2167 行）。本清单 = 逐组件核对后的差距施工图。
+> 原则：HTML 有的全做；Swift 端已对齐的不再列。
+
+## A. 左栏（Swift 缺 8 项）
+1. 搜索框（真实过滤会话）
+2. 项目分组 sections（置顶/工作/个人）+ 项目行（色块/会话数/展开收起）
+3. pin 置顶切换
+4. 会话重命名（inline 编辑）
+5. 新建项目入口（CreateProjectSheet）
+6. 底部入口带 badge（任务队列 3 / 插件 MCP 3 启用 / 记忆 12）
+7. 会话行删除按钮（✕）
+8. 收起后 rail 细条模式
+
+## B. Composer（Swift 缺 7 项）
+1. 上下文胶囊行：项目 chip（切换弹层+新建项目+解绑）/ 本地环境 chip（本地/工作树/云端弹层）/ 分支 chip（BranchPop：搜索+列表+创建）
+2. 附件 + 菜单（@ 文件引用 / 目标 / 计划模式）
+3. CtxRing 环形上下文图 + 点击弹层（含 % 与压缩入口）
+4. slash 弹窗（12 条可执行：model/new/init/compact/review/diff/memories/skills/permissions/plan/export/rename）
+5. @ 文件引用弹窗（WORKSPACE_FILES 过滤插入）
+6. 策略 chip 下拉（三档，联动完全访问开关）
+7. 模型/力度按钮（EffortSlider 拖动 + ModelEffortPop 双态：滑块⇄列表 + BYOK 入口 + 高档警告）
+
+## C. 右栏多 tab（Swift 缺 6 项）
+1. tab 系统（多 tab + 关闭 + 添加菜单 + 快捷键提示 Ctrl+Shift+G / `/T/P）
+2. ReviewTab 完整（分支头 +N−N、main←origin/main、未跟踪文件过滤提示条、筛选框、文件 diff 卡+unmodified 折叠段）
+3. BrowserPanel 浏览器面板（地址栏+开始浏览空态）
+4. FilesPanel 文件面板（文件树+文件内容查看）
+5. 右栏空态（打开面板列表+快捷键）
+6. 右栏收起 rail
+
+## D. 消息流（Swift 缺 3 项）
+1. Think 折叠形态收紧（spinner Thinking → Think·摘要折叠 → 点击展开；当前直接展示）
+2. MsgPlan 步骤列表（done/doing/todo）
+3. MsgSystem alert 行
+
+## E. Sheets（Swift 缺 4 + 改 1）
+1. MemoriesSheet（统计卡+AGENTS.md 卡+条目+淘汰倒计时）
+2. TasksSheet（任务列表+badge）
+3. PluginsSheet（开关列表+添加按钮）
+4. SkillsSheet（技能列表）
+5. CreateProjectSheet（项目名+源文件夹）
+6. SettingsSheet 对齐（权限双开关联动策略/BYOK 三件套/记忆组/Linux 重置）
+
+## F. 其他
+1. ctxwarn 上下文将满横幅（<25% 显示+/compact 提示）
+2. Wizard 首启对齐（spinner 步骤+进入主界面/跳过）
+3. 空态 hero（大标题+4 建议卡，Swift 已有 ✓）
+4. 会话删除后切到最新剩余会话
+
+## 实施批次
+- 批 1：左栏完整 + Sheets 全家 + SessionStore 扩展
+- 批 2：右栏多 tab 系统 + Review 完整 + Files + Browser
+- 批 3：Composer 完整 + CtxRing + slash/@ + 策略联动
+- 批 4：杂项（ctxwarn/Plan/System 消息/Wizard 对齐）+ 构建验收
