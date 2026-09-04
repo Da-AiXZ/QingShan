@@ -69,7 +69,7 @@ final class MemoryStore: ObservableObject {
         let meta: [String: Date] = ["phase1": lastPhase1At ?? .distantPast,
                                     "phase2": lastPhase2At ?? .distantPast]
         let d = try? JSONEncoder().encode(meta)
-        try? d?.write(to: Self.memoryDir.appendingPathComponent(".pipeline_meta").path, options: .atomic)
+        try? d?.write(to: Self.memoryDir.appendingPathComponent(".pipeline_meta"), options: .atomic)
     }
 
     // MARK: Phase2 整合（确定性代码，替代 Codex 的整合 sub-agent）

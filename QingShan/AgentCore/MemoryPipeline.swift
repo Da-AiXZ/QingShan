@@ -31,9 +31,10 @@ final class MemoryPipeline {
         let settings = SettingsStore.shared
         guard settings.hasKey else { return }   // 无真大脑不跑管线（假大脑会话不值得记）
 
+        let sessionStore = SessionStore()
+        sessionStore.refresh()
         let done = extractedSessions
-        let candidates = store.sessions.isEmpty ? [] : store.sessions.map { $0.id }
-            .filter { !done.contains($0) }
+        let candidates = sessionStore.sessions.map { $0.id }.filter { !done.contains($0) }
 
         // 首条用户消息太短的会话不值得提取（打招呼/测试）
         var extractedAny = false
