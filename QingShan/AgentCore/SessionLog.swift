@@ -48,6 +48,7 @@ struct SessionEvent: Codable, Equatable {
     static let stepEnd = "step/end"
     static let userMessage = "user/message"
     static let assistantMessage = "assistant/message"
+    static let agentMessage = "agent/message"
     static let toolCall = "tool/call"
     static let toolResult = "tool/result"
     static let turnEnd = "turn/end"

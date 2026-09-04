@@ -55,6 +55,10 @@ enum ToolRegistry {
         ])
 
     static var all: [LLMToolDef] { [runCommand, readFile, writeFile] }
+
+    static func def(named name: String) -> LLMToolDef? {
+        all.first { $0.name == name }
+    }
 }
 
 // MARK: - AgentSession：turn/step 循环（流式+审批） + 事件溯源 + resume + auto-compact
