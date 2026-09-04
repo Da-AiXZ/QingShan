@@ -37,7 +37,7 @@ struct ChatMessage: Identifiable {
 enum ToolRegistry {
     static let runCommand = LLMToolDef(
         name: "run_command",
-        description: "在用户的 Alpine Linux 沙箱里执行一条 shell 命令，返回 stdout/stderr（30 秒超时）。读文件用 cat，列目录用 ls。",
+        description: "在持久 shell 中执行命令（Alpine Linux 沙箱）：当前目录与 export 的环境变量跨调用保持，和真终端一样。返回 stdout/stderr（30 秒超时）。读文件用 cat，列目录用 ls。",
         parameters: [
             "type": "object",
             "properties": ["command": ["type": "string", "description": "要执行的 shell 命令"]],
@@ -430,15 +430,10 @@ final class AgentSession: ObservableObject {
         return await execShell(command)
     }
 
+    /// M5：走持久 shell（bash-persistent 语义）——cd/export 等状态跨调用保持
     private func execShell(_ command: String) async -> (Int32, Int, String) {
-        let timeout = toolTimeout
-        return await withCheckedContinuation { cont in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let r = ISHShellExecutor.executeCommandSync(command, timeout: timeout, lineCallback: nil)
-                let out = [r.output, r.errorOutput].filter { !$0.isEmpty }.joined(separator: "\n")
-                cont.resume(returning: (r.exitCode, Int(r.duration * 1000), out))
-            }
-        }
+        let r = await PersistentShell.shared.run(command, timeout: toolTimeout)
+        return (Int32(r.exitCode), r.durationMs, r.output)
     }
 
     // MARK: 审批
