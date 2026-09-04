@@ -40,6 +40,7 @@ final class PersistentShell {
         initialized = true
         // 抑制回显（dsh：echo suppression only）
         ISHKernel.shared.sendInputString("stty -echo\n")
+        // 给 stty 生效留出窗口；即便未生效，END 严格解析也能防回显误判
     }
 
     /// console 输出分流入口（RootView 的 outputCallback 喂进来）
@@ -47,11 +48,16 @@ final class PersistentShell {
         guard let run = pending else { return }
         run.buffer += text
 
-        // END 标记出现 → 提取退出码与输出切片
+        // END 标记出现 → 提取退出码与输出切片。
+        // 严格解析：END 后必须紧跟数字退出码（stty -echo 未生效时的命令回显
+        // 会把 END 字面带回输出流，其后无数字——不能误判为完成）。
         if let endRange = run.buffer.range(of: run.endMarker) {
-            let after = String(run.buffer[endRange.upperBound...])
+            let after = String(run.buffer[endRange.upperBound...]).drop { $0 == "\r" || $0 == "\n" }
             let digits = after.prefix { $0.isNumber }
-            let exitCode = Int(digits) ?? 0
+            guard let exitCode = Int(digits), !digits.isEmpty else {
+                pending = run   // 回显误匹配，继续等真实 END
+                return
+            }
 
             let output: String
             if let startRange = run.buffer.range(of: run.startMarker) {
@@ -79,9 +85,11 @@ final class PersistentShell {
         let startMarker = "__QS_PS_START_\(nonce)__"
         let endMarker = "__QS_PS_END_\(nonce)__"
 
-        // dsh wrapCommand：单物理行（避免 PS2 泄漏提示符/标记源文）
+        // 单物理行（避免 PS2 泄漏提示符/标记源文）。
+        // 注意：不能像 dsh 那样用 `eval -- `——Alpine /bin/sh 是 ash/dash，
+        // 其 eval 不支持 -- 选项结束符，会把 -- 当命令执行报 "--: not found"。
         let wrapped = "printf '%s\\n' \(bashQuote(startMarker)); "
-            + "eval -- \(bashQuote(command)); "
+            + "eval \(bashQuote(command)); "
             + "__qs_status=$?; "
             + "printf '%s%s\\n' \(bashQuote(endMarker)) \"$__qs_status\""
 

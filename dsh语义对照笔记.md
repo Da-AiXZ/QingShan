@@ -141,3 +141,21 @@ step():                                     ← 一步 = 一次 LLM 调用及其
 - 批 2：右栏多 tab 系统 + Review 完整 + Files + Browser
 - 批 3：Composer 完整 + CtxRing + slash/@ + 策略联动
 - 批 4：杂项（ctxwarn/Plan/System 消息/Wizard 对齐）+ 构建验收
+
+---
+
+# M5 记录：bash-persistent 移植（tool-bash-persistent → PersistentShell.swift）
+
+| dsh 语义 | 青山实现 | 状态 |
+|---|---|---|
+| owner 级持久 shell 注册表（WeakMap+Map） | boot 时 `/bin/sh -l` 常驻 + PersistentShell 单例 | ✅ |
+| wrapCommand 单物理行（printf START + eval + status + printf END:code） | 同款（nonce 标记 + $'...' 引用转义） | ✅ |
+| quoteForBash（\ ' \r \n 转义） | 同款 | ✅ |
+| scrollback 分页轮询（25ms）取输出 | 全局 console 流分流（outputCallback→ingest），无分页 | ✅ 简化 |
+| END 标记带退出码、START 截断→LOST_PREFIX 提示 | 退出码 ✅；LOST_PREFIX 简化为空输出 | ⚠ 简化 |
+| 超时→部分输出+reset shell | 超时→Ctrl-C 前台+部分输出+**不 reset**（保持持久性） | ⚠ 差异（记 M8 增强） |
+| shell 退出→捕获残余+reset+提示 | 未处理（shell 意外退出时 pending 挂起至超时） | ⚠ 待补 |
+| stty -echo | 同款 | ✅ |
+| owner 内命令串行（queues） | runTurn 循环天然串行 | ✅ |
+| maxOutputChars 截断 16k | prefix 6000（沿 M2 惯例） | ✅ |
+| 工具名 bash / 描述含 persistent 语义 | 工具名 run_command + persistent 描述 | ✅ |
