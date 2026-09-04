@@ -147,8 +147,7 @@ final class SessionLog {
     static func rewriteHeaderTitle(sessionID: String, title: String) {
         let url = sessionsDir.appendingPathComponent("\(sessionID).jsonl")
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return }
-        var lines = raw.components(separatedBy: "
-")
+        var lines = raw.components(separatedBy: "\n")
         guard !lines.isEmpty else { return }
         // 第一行是 session header
         if let d = lines[0].data(using: .utf8),
@@ -161,8 +160,7 @@ final class SessionLog {
                 lines[0] = ns
             }
         }
-        try? lines.joined(separator: "
-").write(to: url, atomically: true, encoding: .utf8)
+        try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
     static func replay(sessionID: String) -> [SessionEvent] {
