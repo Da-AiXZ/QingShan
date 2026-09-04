@@ -199,6 +199,7 @@ struct RootView: View {
                             ctxUsed: ctxUsed,
                             activeProject: activeProject,
                             sessionMeta: sessMeta,
+                            sandboxFiles: sandboxFiles,
                             onSend: sendChat,
                             onAssignProject: { p in
                                 ProjectStore.assign(sessionID: agent.sessionID, projectID: p?.id)
@@ -218,8 +219,7 @@ struct RootView: View {
                                 ToastCenter.shared.show("已切换到分支 \(b)", kind: .info)
                             },
                             onOpenPanel: { panel = $0 },
-                            onSlashCommand: handleSlash,
-                            sandboxFiles: sandboxFiles)
+                            onSlashCommand: handleSlash)
             }
         }
     }
