@@ -159,3 +159,19 @@ step():                                     ← 一步 = 一次 LLM 调用及其
 | owner 内命令串行（queues） | runTurn 循环天然串行 | ✅ |
 | maxOutputChars 截断 16k | prefix 6000（沿 M2 惯例） | ✅ |
 | 工具名 bash / 描述含 persistent 语义 | 工具名 run_command + persistent 描述 | ✅ |
+
+---
+
+# M6 记录：记忆系统（蓝本=Codex memories，非 dsh——dsh 无记忆系统）
+
+| Codex 语义（源码） | 青山实现 | 状态 |
+|---|---|---|
+| 读路径注入模板（决策边界/quick pass/预算 4-6 步） | summaryFragment() 中文适配进 system prompt | ✅ |
+| 引用块 `<oai-mem-citation>` + usage 回写 | `<qs-mem-cite>ids</qs-mem-cite>` → markUsed | ✅ |
+| Phase1 提取（no-op 门禁/脱敏/自包含条目/JSON 输出） | MemoryPipeline.phase1（中文 prompt 翻译 stage_one_system） | ✅ |
+| Phase2 整合（锁+sub-agent+git diff） | **确定性代码整合**（21 天淘汰+usage_count 排序+重写 MEMORY.md/summary）——iOS 单用户无并发竞争，sub-agent 降级为代码 | ✅ 简化 |
+| state DB（SQLite lease/watermark） | entries.json + UserDefaults extracted 集合（单机无竞争） | ✅ 简化（GRDB 可选后续） |
+| 触发：root session 启动异步 | App 启动 + 退后台 + 手动"立即整理" | ✅ |
+| AGENTS.md 三层发现 | 单文件 Documents/AGENTS.md（恒定注入） | ✅ 简化 |
+| skills/ ad_hoc/ WorldState diff | 未做（后续里程碑可选） | ⏳ |
+| git baseline | 未做（无需要） | ⏭ 略 |

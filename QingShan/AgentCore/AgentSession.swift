@@ -210,6 +210,11 @@ final class AgentSession: ObservableObject {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !isThinking, pendingApproval == nil else { return }
         messages.append(.user(t))
+        // 记忆摘要/AGENTS.md 每轮刷新（Codex developer fragment 动态注入语义）——
+        // 管线刚提取的记忆，正在进行的会话也能立刻感知
+        if !llmHistory.isEmpty {
+            llmHistory[0] = .init(role: .system, content: Self.initialSystemPrompt)
+        }
         llmHistory.append(.init(role: .user, content: t))
         log?.append(SessionEvent.userMessage, .init(text: t))
         Task {
