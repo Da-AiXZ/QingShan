@@ -418,7 +418,7 @@ struct RootView: View {
 
     private func closeTab(_ t: String) {
         tabs.removeAll { $0 == t }
-        if atb == t { atb = tabs.last }
+        if atb == t { atb = tabs.last ?? "term" }
     }
 
     private var rightEmpty: some View {
