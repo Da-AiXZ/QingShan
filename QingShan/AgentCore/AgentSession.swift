@@ -334,7 +334,7 @@ final class AgentSession: ObservableObject {
 
                 if needsApproval {
                     // 审批卡内联在消息流（照 HTML MsgApproval，非弹窗）
-                    let card = ChatMessage.approvalCard("Agent 想执行命令", command: command,
+                    let card = ChatMessage.approvalCard(command,
                                                         reason: ApprovalService.reason(command: command, policy: policy))
                     messages.append(card)
                     log?.append("approval/request", .init(text: command, reason: card.reasonText))
