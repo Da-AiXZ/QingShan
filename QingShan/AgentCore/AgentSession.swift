@@ -121,6 +121,7 @@ final class AgentSession: ObservableObject {
         llmHistory = [.init(role: .system, content: Self.systemPrompt)]
         ConsoleHub.clear()
         ConsoleHub.appendLine("— 新会话 \(sessionID)（大脑：\(brainName())）—")
+        NotificationCenter.default.post(name: Notification.Name("sessions.changed"), object: nil)
     }
 
     /// 加载指定会话（重放事件重建消息流 + LLM 历史）
@@ -452,6 +453,11 @@ final class AgentSession: ObservableObject {
     }
 
     // MARK: auto-compact
+
+    /// 用户主动触发压缩（/compact）
+    func compactNow() {
+        Task { await maybeCompact() }
+    }
 
     private func maybeCompact() async {
         let est = llmHistory.reduce(0) { $0 + ($1.content?.count ?? 0) + 8 } / 2

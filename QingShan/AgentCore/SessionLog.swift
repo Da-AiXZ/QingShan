@@ -143,6 +143,28 @@ final class SessionLog {
 
     /// 全量重放：逐行解码；解析失败的行（crash 半行等）静默丢弃——即截断修复语义。
     /// 旧格式（M2 首版 {ts,kind}）解码失败同样被丢弃。
+    /// 重写 header 行的 title（重命名落盘）
+    static func rewriteHeaderTitle(sessionID: String, title: String) {
+        let url = sessionsDir.appendingPathComponent("\(sessionID).jsonl")
+        guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return }
+        var lines = raw.components(separatedBy: "
+")
+        guard !lines.isEmpty else { return }
+        // 第一行是 session header
+        if let d = lines[0].data(using: .utf8),
+           var obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+           var data = obj["data"] as? [String: Any] {
+            data["text"] = title
+            obj["data"] = data
+            if let nd = try? JSONSerialization.data(withJSONObject: obj),
+               let ns = String(data: nd, encoding: .utf8) {
+                lines[0] = ns
+            }
+        }
+        try? lines.joined(separator: "
+").write(to: url, atomically: true, encoding: .utf8)
+    }
+
     static func replay(sessionID: String) -> [SessionEvent] {
         let url = sessionsDir.appendingPathComponent("\(sessionID).jsonl")
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return [] }

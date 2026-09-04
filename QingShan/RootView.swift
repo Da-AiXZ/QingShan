@@ -36,9 +36,7 @@ enum ConsoleHub {
     }
 }
 
-// MARK: - Toast 定义在独立 Toast.swift（此处引用）
-
-// MARK: - 根视图（M4 完整三栏：左导航 / 主会话 / 右终端 + 审批卡 + Toast）
+// MARK: - 根视图（M4.5 完整形态：项目分组左栏 / ctxbar+hero+composer 主区 / 多 tab 右栏）
 
 struct RootView: View {
     enum Phase: Equatable {
@@ -55,16 +53,26 @@ struct RootView: View {
     @State private var phase: Phase = .installing
     @State private var terminalShown: String = ""
     @State private var chatInput: String = ""
-    @State private var showSettings = false
-    @State private var tabs: [String] = ["term"]
-    @State private var atb: String = "term"
-    @State private var revExpand = false
+    @State private var panel: String? = nil          // settings|memories|tasks|plugins|newproject
+    @State private var tabs: [String] = []
+    @State private var atb: String? = nil
     private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
+
+    private var activeProject: Project? { ProjectStore.project(of: agent.sessionID) }
+    private var sessMeta: [String: String] { ProjectStore.sessionMeta(agent.sessionID) }
+    private var ctxUsed: Double { CtxUsage.usedPercent(history: agent.llmHistory) }
 
     var body: some View {
         ZStack {
             HStack(spacing: 0) {
-                sidebar
+                SidebarView(activeID: agent.sessionID,
+                            onSelect: { agent.load(sessionID: $0); store.refresh() },
+                            onNewChat: { newChat(in: nil) },
+                            onNewChatIn: { pid in
+                                newChat(in: pid)
+                            },
+                            onOpenPanel: { panel = $0 },
+                            store: store)
                     .frame(width: 252)
 
                 Divider().overlay(Color.black.opacity(0.08))
@@ -74,143 +82,35 @@ struct RootView: View {
 
                 Divider().overlay(Color.black.opacity(0.08))
 
-                terminalPanel
-                    .frame(width: 420)
+                rightPane
+                    .frame(width: 400)
             }
 
-            ToastOverlay()
-                .zIndex(40)
-
-            if showSettings {
-                Color.black.opacity(0.35).ignoresSafeArea().zIndex(49)
-                    .onTapGesture { showSettings = false }
-                SettingsSheet(onClose: { showSettings = false })
-                    .zIndex(50)
-            }
+            ToastOverlay().zIndex(40)
+            sheetLayer.zIndex(50)
         }
         .background(Color(hex: 0xF6F5F1))
         .task { await run() }
         .onReceive(timer) { _ in
             terminalShown = ConsoleHub.text
         }
-    }
-
-    // MARK: 左栏（会话导航）
-
-    private var sidebar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Text("青山")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                Spacer()
-                Button {
-                    agent.startNew(title: "新会话")
-                    store.refresh()
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("会话")
-                        .font(.caption2).foregroundStyle(Color.secondary)
-                        .padding(.horizontal, 10).padding(.top, 4)
-                    ForEach(store.sessions) { s in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(agent.sessionID == s.id && phase == .ready ? Color.accentColor : Color.secondary.opacity(0.5))
-                                .frame(width: 6, height: 6)
-                            Text(s.title)
-                                .font(.system(size: 12.5))
-                                .lineLimit(1)
-                            Spacer()
-                            if agent.sessionID == s.id {
-                                Button {
-                                    store.deleteSession(id: s.id)
-                                    if agent.sessionID == s.id {
-                                        agent.startNew(title: "新会话")
-                                    }
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Color.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.vertical, 7).padding(.horizontal, 10)
-                        .background(agent.sessionID == s.id ? Color.white : Color.clear)
-                        .cornerRadius(8)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard agent.sessionID != s.id else { return }
-                            agent.load(sessionID: s.id)
-                        }
-                    }
-                }
-                .padding(.horizontal, 8)
-            }
-
-            Spacer()
-
-            Divider()
-            sideEntry("list.bullet", "任务队列") { ToastCenter.shared.show("任务队列在 M7 交付", kind: .info) }
-            sideEntry("puzzlepiece.fill", "插件") { ToastCenter.shared.show("插件在 M7 交付", kind: .info) }
-            sideEntry("brain", "记忆") { ToastCenter.shared.show("记忆系统在 M6 交付", kind: .info) }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("sessions.changed"))) { _ in
+            store.refresh()
         }
-        .background(Color(hex: 0xEFEEE9))
-        .onAppear { store.refresh() }
-        .onChange(of: phase) { _ in store.refresh() }
     }
 
-    private func sideEntry(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 12))
-                Text(label).font(.footnote)
-                Spacer()
-            }
-            .foregroundStyle(Color.secondary)
-            .padding(.horizontal, 12).padding(.vertical, 7)
+    private func newChat(in projectID: String?) {
+        agent.startNew(title: "新对话")
+        if let pid = projectID {
+            ProjectStore.assign(sessionID: agent.sessionID, projectID: pid)
         }
-        .buttonStyle(.plain)
+        store.refresh()
     }
 
-    // MARK: 主区（会话视图）
+    // MARK: 主区（ctxbar + 消息流/hero + composer）
 
     private var mainPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle()
-                    .fill(settings.hasKey ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-                Text(settings.hasKey ? "真大脑 · \(settings.model)" : "假大脑 · 未配 Key")
-                    .font(.caption).foregroundStyle(Color.secondary)
-                Spacer()
-                Button {
-                    showSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 8)
-
+        VStack(spacing: 0) {
             switch phase {
             case .installing:
                 bootStatus("正在装配 Alpine rootfs（仅首次）…", icon: "externaldrive.badge.timemachine")
@@ -220,13 +120,49 @@ struct RootView: View {
                     ProgressView().controlSize(.small)
                     Text("Linux 内核启动中…").font(.footnote).foregroundStyle(Color.secondary)
                 }
-                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
                 Spacer()
             case .failed(let msg):
                 bootStatus("失败：\(msg)", icon: "xmark.octagon.fill", color: .red)
                 Spacer()
             case .ready:
-                chatPane
+                ctxbar
+                if agent.messages.isEmpty {
+                    ScrollView {
+                        emptyHero
+                            .padding(.top, 50)
+                    }
+                } else {
+                    chatScroll
+                }
+                ctxWarn
+                ComposerBar(input: $chatInput,
+                            policy: $agent.policy,
+                            settings: settings,
+                            ctxUsed: ctxUsed,
+                            activeProject: activeProject,
+                            sessionMeta: sessMeta,
+                            onSend: sendChat,
+                            onAssignProject: { p in
+                                ProjectStore.assign(sessionID: agent.sessionID, projectID: p?.id)
+                                store.refresh()
+                            },
+                            onNewProject: { panel = "newproject" },
+                            onSetEnv: { v in
+                                var m = sessMeta
+                                m["loc"] = v
+                                ProjectStore.setSessionMeta(agent.sessionID, m)
+                                ToastCenter.shared.show(v == "cloud" ? "已切换到云端（mock）" : "已切换到本地", kind: .info)
+                            },
+                            onSetBranch: { b in
+                                var m = sessMeta
+                                m["branch"] = b
+                                ProjectStore.setSessionMeta(agent.sessionID, m)
+                                ToastCenter.shared.show("已切换到分支 \(b)", kind: .info)
+                            },
+                            onOpenPanel: { panel = $0 },
+                            onSlashCommand: handleSlash)
             }
         }
     }
@@ -237,17 +173,82 @@ struct RootView: View {
             Text(text).font(.footnote)
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
     }
 
-    // MARK: 会话视图（Codex 式消息流）
-
-    private var chatPane: some View {
-        VStack(spacing: 0) {
-            chatScroll
-            Divider()
-            chatInputBar
+    // ctxbar（HTML .ctxbar：项目名 · 会话名 …… 模型 · 推理档）
+    private var ctxbar: some View {
+        HStack(spacing: 10) {
+            Text(activeProject?.name ?? "未分配项目")
+                .font(.system(size: 11, design: .monospaced))
+            Text("·").foregroundStyle(Color(hex: 0xC9C6BE))
+            Text(agent.sessionTitle.isEmpty ? "新对话" : agent.sessionTitle)
+                .font(.system(size: 11.5)).lineLimit(1)
+            Spacer()
+            Text("\(settings.model.isEmpty ? "未配置" : settings.model) · 推理 \(EffortTier.current.label)")
+                .font(.system(size: 11.5)).foregroundStyle(Color(hex: 0xA8A49C))
+            Button { panel = "settings" } label: {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13))
+                    .foregroundStyle(Color(hex: 0x6E6B64))
+            }
+            .buttonStyle(.plain)
         }
+        .foregroundStyle(Color(hex: 0x8A8894))
+        .padding(.horizontal, 24)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+    }
+
+    // hero 空态（HTML EmptyHero 对齐）
+    private var emptyHero: some View {
+        VStack(spacing: 0) {
+            Group {
+                if let p = activeProject {
+                    Text("你想让我们在 ") + Text(p.name).accentUnderline() + Text(" 中构建什么？")
+                } else {
+                    Text("你想让我们构建什么？")
+                }
+            }
+            .font(.system(size: 25, weight: .bold))
+            .foregroundStyle(Color(hex: 0x242420))
+            .multilineTextAlignment(.center)
+            .padding(.bottom, 8)
+
+            Text("描述目标，Agent 会自己规划、执行、验证。")
+                .font(.system(size: 13)).foregroundStyle(Color(hex: 0xA8A49C))
+                .padding(.bottom, 30)
+
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(MockData.suggestions.indices, id: \.self) { i in
+                    let s = MockData.suggestions[i]
+                    Button {
+                        chatInput = s.fill
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: s.icon)
+                                .font(.system(size: 15))
+                                .foregroundStyle(Color(hex: 0xE0833C))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(s.b).font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color(hex: 0x242420))
+                                Text(s.s).font(.system(size: 11.5))
+                                    .foregroundStyle(Color(hex: 0xA8A49C))
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.white)
+                        .cornerRadius(13)
+                        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(hex: 0xE5E2DC)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: 490)
+        }
+        .padding(.horizontal, 32)
     }
 
     private var chatScroll: some View {
@@ -266,18 +267,10 @@ struct RootView: View {
 
     private var chatMessages: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if agent.messages.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("青山 Agent 已就绪").font(.headline)
-                    Text("对 Agent 说什么都行；它会用 run_command 工具在 Linux 沙箱里执行命令。\n试试：「检查一下工作环境」「帮我写一个 hello.py」「磁盘还剩多少空间」。")
-                        .font(.subheadline).foregroundStyle(Color.secondary)
-                }
-                .padding(.vertical, 40)
-            }
             ForEach(agent.messages) { m in
                 messageRow(m).id(m.id)
             }
-            if agent.isThinking {
+            if agent.isThinking && agent.messages.last?.role != .think {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Agent 工作中…").font(.footnote).foregroundStyle(Color.secondary)
@@ -285,28 +278,26 @@ struct RootView: View {
             }
             Color.clear.frame(height: 8).id("chat-bottom")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 6)
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
     }
 
-    private var chatInputBar: some View {
-        HStack(spacing: 8) {
-            Text("❯").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(Color.accentColor)
-            TextField("对 Agent 说什么…（Enter 发送）", text: $chatInput)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13.5))
-                .onSubmit(sendChat)
-                .disabled(agent.pendingApproval != nil)
-            Button(action: sendChat) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(chatInput.trimmingCharacters(in: .whitespaces).isEmpty || agent.isThinking ? Color.gray.opacity(0.4) : Color.accentColor)
+    // ctxwarn（HTML 剩余<25% = used>75%）
+    @ViewBuilder
+    private var ctxWarn: some View {
+        if ctxUsed > 75 {
+            HStack(spacing: 7) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 12))
+                Text(String(format: "上下文即将用尽（已用 %.0f%%）。发送 /compact 压缩会话以继续。", ctxUsed))
+                    .font(.system(size: 12))
             }
-            .buttonStyle(.plain)
-            .disabled(chatInput.trimmingCharacters(in: .whitespaces).isEmpty || agent.isThinking)
+            .foregroundStyle(Color(hex: 0xB57308))
+            .padding(.vertical, 8).padding(.horizontal, 14)
+            .background(Color(hex: 0xFFFAF2))
+            .cornerRadius(10)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 6)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -326,19 +317,7 @@ struct RootView: View {
         case .agent:
             HStack(alignment: .top, spacing: 0) {
                 Text("•").foregroundStyle(Color.secondary).frame(width: 15, alignment: .leading)
-                VStack(alignment: .leading, spacing: 6) {
-                    if let r = m.reasoning, !r.isEmpty {
-                        Text("Thinking").font(.caption2).foregroundStyle(Color.secondary)
-                        Text(r)
-                            .font(.system(size: 12.5))
-                            .italic()
-                            .foregroundStyle(Color.secondary)
-                            .textSelection(.enabled)
-                    }
-                    if !m.text.isEmpty {
-                        Text(m.text).textSelection(.enabled)
-                    }
-                }
+                Text(m.text).textSelection(.enabled)
             }
         case .think:
             ThinkRowView(m: m)
@@ -349,9 +328,30 @@ struct RootView: View {
         }
     }
 
-    // MARK: 右栏多 tab 面板
+    private func sendChat() {
+        let t = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        chatInput = ""
+        agent.send(t)
+    }
 
-    private var terminalPanel: some View {
+    private func handleSlash(_ cmd: String) {
+        chatInput = ""
+        switch cmd {
+        case "/new": newChat(in: nil)
+        case "/compact": agent.compactNow()
+        case "/review": openTab("review")
+        case "/terminal": openTab("term")
+        case "/files": openTab("files")
+        case "/help":
+            ToastCenter.shared.show("/new /compact /model /review /terminal /files /memories /tasks /plugins /permissions /settings", kind: .info, duration: 6)
+        default: break
+        }
+    }
+
+    // MARK: 右栏（多 tab 面板 + 空态）
+
+    private var rightPane: some View {
         VStack(spacing: 0) {
             if tabs.isEmpty {
                 rightEmpty
@@ -359,9 +359,8 @@ struct RootView: View {
                 tabHeader
                 switch atb {
                 case "review": reviewTab
-                case "term": termTab
                 case "files": filesTab
-                default: rightEmpty
+                default: termTab
                 }
             }
         }
@@ -387,7 +386,7 @@ struct RootView: View {
                 .onTapGesture { atb = t }
             }
             Menu {
-                ForEach(["review", "term", "files", "browser"], id: \.self) { t in
+                ForEach(["review", "term", "files"], id: \.self) { t in
                     if !tabs.contains(t) {
                         Button(tabTitle(t)) { openTab(t) }
                     }
@@ -404,11 +403,19 @@ struct RootView: View {
     }
 
     private func tabIcon(_ t: String) -> String {
-        switch t { case "review": return "arrow.triangle.pull"; case "term": return "terminal.fill"; case "browser": return "globe"; default: return "folder" }
+        switch t {
+        case "review": return "arrow.triangle.pull"
+        case "files": return "folder"
+        default: return "terminal.fill"
+        }
     }
 
     private func tabTitle(_ t: String) -> String {
-        switch t { case "review": return "审查"; case "term": return "终端"; case "browser": return "浏览器"; case "files": return "文件"; default: return t }
+        switch t {
+        case "review": return "审查"
+        case "files": return "文件"
+        default: return "终端"
+        }
     }
 
     private func openTab(_ t: String) {
@@ -418,62 +425,134 @@ struct RootView: View {
 
     private func closeTab(_ t: String) {
         tabs.removeAll { $0 == t }
-        if atb == t { atb = tabs.last ?? "term" }
+        if atb == t { atb = tabs.last }
     }
 
     private var rightEmpty: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             Spacer()
-            ForEach([("审查", "arrow.triangle.pull", "Ctrl+Shift+G"), ("终端", "terminal", "Ctrl+`"), ("浏览器", "globe", "Ctrl+T"), ("文件", "folder", "Ctrl+P")], id: \.1) { item in
-                Button { openTab(item.1) } label: {
-                    HStack {
-                        Image(systemName: item.1 == "term" ? "terminal" : item.1 == "review" ? "git" : item.1 == "browser" ? "globe" : "folder")
-                        Text(item.0).font(.footnote)
-                        Spacer()
-                        Text(item.2).font(.caption2).foregroundStyle(Color.secondary)
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Color.white)
-                    .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-            }
+            rightRow("arrow.triangle.pull", "审查", "Ctrl+Shift+G", "review")
+            rightRow("terminal", "终端", "Ctrl+`", "term")
+            rightRow("safari", "浏览器", "Ctrl+T", "term")
+            rightRow("folder", "文件", "Ctrl+P", "files")
             Spacer()
         }
         .padding(.horizontal, 30)
     }
 
-    // MARK: 审查 tab
+    private func rightRow(_ icon: String, _ label: String, _ key: String, _ tab: String) -> some View {
+        Button { openTab(tab) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 13)).foregroundStyle(Color(hex: 0x8A8894))
+                Text(label).font(.system(size: 12.5)).foregroundStyle(Color(hex: 0x4A4840))
+                Spacer()
+                Text(key).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color(hex: 0xA8A49C))
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(Color.white)
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+    }
 
+    // 终端 tab（真输出流 + 手动命令）
+    private var termTab: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(terminalShown.isEmpty ? "（终端输出将显示在这里）" : terminalShown)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(terminalShown.isEmpty ? Color.secondary : Color(hex: 0xB8E8C8))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .textSelection(.enabled)
+                    Color.clear.frame(height: 1).id("t-bottom")
+                }
+                .background(Color(hex: 0x161816))
+                .onChange(of: terminalShown) { _ in
+                    proxy.scrollTo("t-bottom", anchor: .bottom)
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                Text("❯").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(Color(hex: 0xE0833C))
+                TextField(phase == .ready ? "直接执行命令（独立进程）" : "内核启动后可用…", text: $exec.pendingCommand)
+                    .font(.system(size: 13, design: .monospaced))
+                    .textFieldStyle(.plain)
+                    .disabled(phase != .ready)
+                    .onSubmit { exec.runPending() }
+                if exec.isRunning {
+                    Button(action: { exec.stop(); ConsoleHub.appendLine("（已请求停止）") }) {
+                        Image(systemName: "stop.fill")
+                            .foregroundStyle(Color.white).padding(7)
+                            .background(Color.red).cornerRadius(7)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: { exec.runPending() }) {
+                        Image(systemName: "play.fill")
+                            .foregroundStyle(Color.white).padding(7)
+                            .background(exec.pendingCommand.isEmpty || phase != .ready ? Color.gray.opacity(0.5) : Color(hex: 0xE0833C))
+                            .cornerRadius(7)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(exec.pendingCommand.isEmpty || phase != .ready)
+                }
+            }
+            .padding(10)
+        }
+    }
+
+    // 审查 tab（真数据：会话内工具操作流）
     private var reviewTab: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                if agent.messages.isEmpty && (sessChanges?.isEmpty ?? true) {
-                    Text("暂无改动").font(.footnote).foregroundStyle(Color.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 40)
-                }
-                if let chs = sessChanges, !chs.isEmpty {
-                    ForEach(Array(chs.enumerated()), id: \.offset) { _, c in
-                        VStack(alignment: .leading, spacing: 0) {
-                            Button { revExpand.toggle() } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.triangle.pull").font(.system(size: 10))
-                                    Text(c.path).font(.system(size: 12, design: .monospaced)).lineLimit(1)
-                                    Spacer()
-                                    Text("+\(c.add) −\(c.del)").font(.system(size: 11, design: .monospaced))
+            VStack(alignment: .leading, spacing: 8) {
+                let toolMsgs = agent.messages.filter { $0.role == .tool }
+                if toolMsgs.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "arrow.triangle.pull").font(.system(size: 22))
+                            .foregroundStyle(Color(hex: 0xC9C6BE))
+                        Text("暂无改动").font(.system(size: 13, weight: .semibold))
+                        Text("Agent 修改文件后，这里会列出全部变更。")
+                            .font(.system(size: 11.5)).foregroundStyle(Color(hex: 0xA8A49C))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
+                } else {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.triangle.branch").font(.system(size: 12))
+                        Text("\(sessMeta["branch"] ?? "main") ⇄ 会话内工具操作")
+                            .font(.system(size: 11.5, design: .monospaced))
+                        Spacer()
+                        Text("\(toolMsgs.count) 次操作").font(.system(size: 11)).foregroundStyle(Color(hex: 0xA8A49C))
+                    }
+                    .padding(10)
+                    .background(Color(hex: 0xF1EFEB))
+                    .cornerRadius(8)
+                    ForEach(toolMsgs) { m in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 6) {
+                                Image(systemName: (m.exitCode ?? 0) == 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle((m.exitCode ?? 0) == 0 ? Color.green : Color.red)
+                                Text(m.text).font(.system(size: 11.5, design: .monospaced)).lineLimit(1)
+                                Spacer()
+                                if let ms = m.durationMs {
+                                    Text(String(format: "%.1fs", Double(ms) / 1000))
+                                        .font(.system(size: 10.5)).foregroundStyle(Color(hex: 0xA8A49C))
                                 }
-                                .padding(8)
                             }
-                            .buttonStyle(.plain)
-                            if revExpand {
-                                Text(c.diffPreview)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(Color.secondary)
-                                    .padding(8)
+                            if let out = m.output, !out.isEmpty {
+                                Text(out)
+                                    .font(.system(size: 10.5, design: .monospaced))
+                                    .foregroundStyle(Color(hex: 0x8A8894))
+                                    .lineLimit(6)
                             }
                         }
-                        .background(Color(hex: 0xFBFaF7))
+                        .padding(10)
+                        .background(Color.white)
                         .cornerRadius(8)
                     }
                 }
@@ -482,51 +561,55 @@ struct RootView: View {
         }
     }
 
-    private var termTab: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(termLines.enumerated()), id: \.offset) { _, l in
-                        HStack(spacing: 0) {
-                            if l.k == "p" {
-                                Text(l.t).foregroundStyle(Color(hex: 0x8FD0AA))
-                                Text(l.c).foregroundStyle(Color.white)
-                            } else {
-                                Text(l.t).foregroundStyle(l.k == "c" ? Color.white : Color(hex: 0x9A9C93))
-                            }
-                        }
-                    }
-                    Color.clear.frame(height: 1).id("term-bottom")
-                }
-                .padding(12)
-            }
-            .background(Color(hex: 0x161816))
-            .onChange(of: termLines.count) { _ in proxy.scrollTo("term-bottom") }
-        }
-    }
-
+    // 文件 tab（点击 → 终端 cat 预览，真数据）
     private var filesTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(WORKSPACE_FILES, id: \.self) { f in
+                ForEach(MockData.workspaceFiles, id: \.self) { f in
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text").font(.system(size: 10)).foregroundStyle(Color.secondary)
                         Text(f).font(.system(size: 12, design: .monospaced)).lineLimit(1)
                     }
                     .padding(.vertical, 4).padding(.horizontal, 8)
                     .contentShape(Rectangle())
-                    .onTapGesture { ToastCenter.shared.show("文件查看 M4.5 后续补充", kind: .info) }
+                    .onTapGesture {
+                        ConsoleHub.appendLine("❯ cat '\(f)' 2>&1 | head -40")
+                        exec.run("cat '\(f)' 2>&1 | head -40", timeout: 10, onLine: { _ in }, onDone: { _ in })
+                        openTab("term")
+                    }
                 }
             }
             .padding(10)
         }
     }
 
-    private var sessChanges: [ToolChange]? { nil }
+    // MARK: 面板弹层接线
 
-    private var termLines: [(k: String, t: String, c: String)] {
-        [(k: "p", t: "root@qingshan:~# ", c: "")]
+    @ViewBuilder
+    private var sheetLayer: some View {
+        if panel != nil {
+            Color.black.opacity(0.3).ignoresSafeArea()
+                .onTapGesture { panel = nil }
+                .zIndex(49)
+            Group {
+                switch panel {
+                case "settings": AnyView(SettingsSheet(onClose: { panel = nil }))
+                case "memories": AnyView(MemoriesSheet(onClose: { panel = nil }))
+                case "tasks": AnyView(TasksSheet(onClose: { panel = nil }))
+                case "plugins": AnyView(PluginsSheet(onClose: { panel = nil }))
+                case "skills": AnyView(SkillsSheet(onClose: { panel = nil }))
+                case "newproject": AnyView(CreateProjectSheet(onClose: { panel = nil }, onCreate: { name in
+                    _ = ProjectStore.addProject(name: name)
+                    store.refresh()
+                    ToastCenter.shared.show("项目「\(name)」已创建", kind: .success)
+                }))
+                default: AnyView(EmptyView())
+                }
+            }
+            .zIndex(51)
+        }
     }
+
     // MARK: 流程
 
     private func run() async {
@@ -561,18 +644,11 @@ struct RootView: View {
             return rc
         }.value
 
-        // M2 语义：杀 App 重进自动恢复最近会话
         if !agent.resumeLatest() {
-            agent.startNew(title: "新会话")
+            agent.startNew(title: "新对话")
         }
+        store.refresh()
         phase = .ready
-    }
-
-    private func sendChat() {
-        let t = chatInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
-        chatInput = ""
-        agent.send(t)
     }
 
     private static func bootKernel() -> Int32 {
@@ -586,20 +662,133 @@ struct RootView: View {
     }
 }
 
-let WORKSPACE_FILES = [
-    "Sources/App/AppDelegate.swift", "Sources/Player/AudioPlayer.swift",
-    "Sources/Core/Logging/LoggerFacade.swift", "Sources/Core/Download/DownloadManager.swift",
-    "Sources/UI/LibraryView.swift", "Package.swift", "README.md", "AGENTS.md",
-]
+// MARK: - hero 项目名橙色下划线
 
-struct ToolChange {
-    let path: String
-    let add: Int
-    let del: Int
-    let diffPreview: String
+extension Text {
+    func accentUnderline() -> Text {
+        self.underline(true, color: Color(hex: 0xE0833C))
+    }
 }
 
-// MARK: - 工具消息行（Codex 式单行 + 点开展开输出）
+// MARK: - Think 行（spinner Thinking → 折叠摘要 + 点击展开全文）
+
+struct ThinkRowView: View {
+    let m: ChatMessage
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: { if !m.running { expanded.toggle() } }) {
+                HStack(spacing: 7) {
+                    if m.running {
+                        Text("⠋").font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.secondary)
+                        Text("Thinking").font(.system(size: 12.5, weight: .semibold))
+                        Text("· 正在整理思路…").font(.system(size: 12)).foregroundStyle(Color.secondary)
+                    } else {
+                        Image(systemName: "brain").font(.system(size: 11)).foregroundStyle(Color.secondary)
+                        Text("Think").font(.system(size: 12.5, weight: .semibold))
+                        Text("· \(m.summary.isEmpty ? String(m.text.prefix(60)) : m.summary)")
+                            .font(.system(size: 12)).foregroundStyle(Color.secondary).lineLimit(1)
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10)).foregroundStyle(Color.secondary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            if expanded, !m.running, !m.text.isEmpty {
+                Text(m.text)
+                    .font(.system(size: 12))
+                    .italic()
+                    .foregroundStyle(Color.secondary)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.04))
+                    .cornerRadius(8)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+// MARK: - 审批内联卡（消息流内，HTML MsgApproval 形态）
+
+struct ApprovalInlineRow: View {
+    let m: ChatMessage
+    let onDecide: (ApprovalDecision) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if m.decision == nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(hex: 0xB57308))
+                        Text("Agent 想执行命令").font(.system(size: 13, weight: .semibold))
+                    }
+                    Text(m.output ?? "")
+                        .font(.system(size: 12, design: .monospaced))
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.black.opacity(0.05))
+                        .cornerRadius(7)
+                        .textSelection(.enabled)
+                    Text(m.reasonText).font(.caption).foregroundStyle(Color.secondary)
+                    HStack(spacing: 8) {
+                        Button { onDecide(.allowOnce) } label: {
+                            Text("允许一次")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.white)
+                                .padding(.vertical, 6).padding(.horizontal, 12)
+                                .background(Color(hex: 0x242422))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        Button { onDecide(.allowAlways) } label: {
+                            Text("始终允许此类")
+                                .font(.system(size: 12))
+                                .padding(.vertical, 6).padding(.horizontal, 12)
+                                .background(Color.black.opacity(0.06))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        Button { onDecide(.deny) } label: {
+                            Text("拒绝")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.red)
+                                .padding(.vertical, 6).padding(.horizontal, 12)
+                                .background(Color.red.opacity(0.08))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: 640, alignment: .leading)
+                .background(Color(hex: 0xFFFAF2))
+                .cornerRadius(12)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: 0xECD9BD)))
+            } else {
+                HStack(spacing: 5) {
+                    Image(systemName: m.decision == "deny" ? "xmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(m.decision == "deny" ? Color.red : Color.green)
+                    Text(m.decision == "deny" ? "denied" : "approved")
+                        .font(.system(size: 12.5, weight: .semibold))
+                    Text(m.output ?? "")
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(Color.secondary).lineLimit(1)
+                    Text(m.decision == "once" ? "this time" : m.decision == "always" ? "every time this session" : "")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - 工具消息行（单行 + 点开展开输出）
 
 struct ToolMessageRow: View {
     let m: ChatMessage
@@ -647,189 +836,5 @@ struct ToolMessageRow: View {
                     .textSelection(.enabled)
             }
         }
-    }
-}
-
-// MARK: - 审批卡（Agent 挂起等待用户决定）
-
-struct ApprovalCardView: View {
-    let req: ApprovalRequest
-    let onDecide: (ApprovalDecision) -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .foregroundStyle(Color(hex: 0xB57308))
-                    Text("Agent 想执行命令").font(.system(size: 15, weight: .semibold))
-                }
-                Text(req.reason).font(.footnote).foregroundStyle(Color.secondary)
-
-                Text(req.command)
-                    .font(.system(size: 12, design: .monospaced))
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.black.opacity(0.06))
-                    .cornerRadius(8)
-                    .textSelection(.enabled)
-
-                HStack(spacing: 8) {
-                    Button {
-                        onDecide(.allowOnce)
-                    } label: {
-                        Text("允许一次").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color(hex: 0xD97706))
-                    Button {
-                        onDecide(.allowAlways)
-                    } label: {
-                        Text("始终允许").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    Button {
-                        onDecide(.deny)
-                    } label: {
-                        Text("拒绝").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                }
-                .padding(.top, 2)
-            }
-            .padding(18)
-            .frame(width: 470)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: .black.opacity(0.22), radius: 24)
-        }
-    }
-}
-
-// MARK: - Think 行（Codex 式：spinner Thinking → 折叠摘要 + 点击展开全文）
-
-struct ThinkRowView: View {
-    let m: ChatMessage
-    @State private var expanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button(action: { if !m.running { expanded.toggle() } }) {
-                HStack(spacing: 7) {
-                    if m.running {
-                        Text("⠋").font(.system(size: 13, design: .monospaced)).foregroundStyle(Color.secondary)
-                        Text("Thinking").font(.system(size: 12.5, weight: .semibold))
-                        Text("· 正在整理思路…").font(.system(size: 12)).foregroundStyle(Color.secondary)
-                    } else {
-                        Image(systemName: "brain").font(.system(size: 11)).foregroundStyle(Color.secondary)
-                        Text("Think").font(.system(size: 12.5, weight: .semibold))
-                        Text("· \(m.summary.isEmpty ? String(m.text.prefix(60)) : m.summary)")
-                            .font(.system(size: 12)).foregroundStyle(Color.secondary).lineLimit(1)
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 10)).foregroundStyle(Color.secondary)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-
-            if expanded, !m.running, !m.text.isEmpty {
-                Text(m.text)
-                    .font(.system(size: 12))
-                    .italic()
-                    .foregroundStyle(Color.secondary)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.black.opacity(0.04))
-                    .cornerRadius(8)
-                    .textSelection(.enabled)
-            }
-        }
-    }
-}
-
-// MARK: - 审批内联卡（消息流内，非弹窗；照 HTML MsgApproval）
-
-struct ApprovalInlineRow: View {
-    let m: ChatMessage
-    let onDecide: (ApprovalDecision) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if m.decision == nil {
-                // 待决定：米黄内联卡
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "shield.lefthalf.filled")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color(hex: 0xB57308))
-                        Text("Agent 想执行命令").font(.system(size: 13, weight: .semibold))
-                    }
-                    Text(m.output ?? "")
-                        .font(.system(size: 12, design: .monospaced))
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.black.opacity(0.05))
-                        .cornerRadius(7)
-                        .textSelection(.enabled)
-                    Text(m.reasonText).font(.caption).foregroundStyle(Color.secondary)
-                    HStack(spacing: 8) {
-                        Button {
-                            onDecide(.allowOnce)
-                        } label: {
-                            Text("允许一次")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.white)
-                                .padding(.vertical, 6).padding(.horizontal, 12)
-                                .background(Color(hex: 0x242422))
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            onDecide(.allowAlways)
-                        } label: {
-                            Text("始终允许此类")
-                                .font(.system(size: 12))
-                                .padding(.vertical, 6).padding(.horizontal, 12)
-                                .background(Color.black.opacity(0.06))
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                        Button {
-                            onDecide(.deny)
-                        } label: {
-                            Text("拒绝")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.red)
-                                .padding(.vertical, 6).padding(.horizontal, 12)
-                                .background(Color.red.opacity(0.08))
-                                .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: 640, alignment: .leading)
-                .background(Color(hex: 0xFFFAF2))
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: 0xECD9BD)))
-            } else {
-                // 决定后：一行收尾（dsh/Codex 语义）
-                HStack(spacing: 5) {
-                    Image(systemName: m.decision == "deny" ? "xmark.circle.fill" : "checkmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(m.decision == "deny" ? Color.red : Color.green)
-                    Text(m.decision == "deny" ? "denied" : "approved")
-                        .font(.system(size: 12.5, weight: .semibold))
-                    Text(m.output ?? "")
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundStyle(Color.secondary).lineLimit(1)
-                    Text(m.decision == "once" ? "this time" : m.decision == "always" ? "every time this session" : "")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-            }
-        }
-        .padding(.vertical, 2)
     }
 }

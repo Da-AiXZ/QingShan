@@ -80,6 +80,11 @@ final class DeepSeekAdapter: LLMAdapter {
         if !tools.isEmpty {
             body["tools"] = tools.map { $0.wireJSON }
         }
+        // 推理力度档位真实生效：medium（默认）不发送，非默认档传 reasoning_effort
+        let tier = EffortTier.current
+        if tier != .medium {
+            body["reasoning_effort"] = tier == .xhigh ? "high" : tier.rawValue
+        }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response) = try await URLSession.shared.bytes(for: req)
