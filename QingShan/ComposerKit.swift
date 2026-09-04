@@ -258,7 +258,7 @@ struct ModelEffortPopView: View {
     var body: some View {
         if mode == "list" {
             PopShell(minWidth: 260) {
-                PopHeader("模型")
+                PopHeader(text: "模型")
                 PopOption(icon: "cpu", title: settings.model.isEmpty ? "未配置模型" : settings.model,
                           subtitle: "当前 BYOK 模型", selected: true) {
                     mode = "slider"
@@ -323,7 +323,7 @@ struct BranchPopView: View {
             .cornerRadius(7)
             .padding(.horizontal, 8).padding(.top, 8)
 
-            PopHeader("分支")
+            PopHeader(text: "分支")
             ForEach(MockData.branches.filter { $0.localizedCaseInsensitiveContains(q) }, id: \.self) { b in
                 PopOption(icon: "arrow.triangle.branch", title: b, selected: b == current) {
                     onPick(b)
@@ -402,7 +402,7 @@ struct EnvPopView: View {
 
     var body: some View {
         PopShell(minWidth: 300) {
-            PopHeader("工作环境")
+            PopHeader(text: "工作环境")
             PopOption(icon: "desktopcomputer", title: "本地",
                       subtitle: "在此设备沙箱中读写执行", selected: current != "cloud") { onPick("local") }
             PopOption(icon: "arrow.triangle.branch", title: "新建本地工作树",
@@ -431,7 +431,7 @@ struct PolicyPopView: View {
 
     var body: some View {
         PopShell(minWidth: 300) {
-            PopHeader("审批策略")
+            PopHeader(text: "审批策略")
             row(.askAlways, icon: "hand.raised", title: "请求批准",
                 sub: "所有工具操作都需要确认")
             row(.riskyOnly, icon: "exclamationmark.triangle", title: "危险才问",
@@ -698,7 +698,7 @@ struct ComposerBar: View {
         .overlay(alignment: .bottomLeading) {
             if pop == "addmenu" {
                 PopShell(minWidth: 330) {
-                    PopHeader("添加")
+                    PopHeader(text: "添加")
                     PopOption(icon: "at", title: "文件和文件夹", subtitle: "引用工作区中的文件") {
                         input = "@"
                         pop = nil

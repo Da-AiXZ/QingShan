@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - 项目模型（HTML PROJECTS 对齐）
 
-struct Project: Identifiable, Equatable {
+struct Project: Identifiable, Equatable, Codable {
     let id: String
     var name: String
     var colorHex: UInt32
@@ -166,7 +166,7 @@ struct SidebarView: View {
                     if !pinned.isEmpty {
                         grpLabel("置顶")
                         ForEach(pinned) { p in
-                            projectSection(p, tick: tick)
+                            projectSection(p)
                         }
                     }
                     grpLabelWithAdd("项目") { onOpenPanel("newproject") }
@@ -176,7 +176,7 @@ struct SidebarView: View {
                             .padding(.horizontal, 12).padding(.vertical, 8)
                     }
                     ForEach(rest) { p in
-                        projectSection(p, tick: tick)
+                        projectSection(p)
                     }
                 }
                 .padding(.bottom, 12)
@@ -215,7 +215,7 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func projectSection(_ p: Project, tick: Int) -> some View {
+    private func projectSection(_ p: Project) -> some View {
         let _ = tick
         let allSess = store.sessions.filter { ProjectStore.project(of: $0.id)?.id == p.id }
         let list: [SessRowItem] = {

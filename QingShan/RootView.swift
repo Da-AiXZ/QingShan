@@ -573,8 +573,8 @@ struct RootView: View {
                     .padding(.vertical, 4).padding(.horizontal, 8)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        ConsoleHub.appendLine("❯ cat '\(f)' 2>&1 | head -40")
-                        exec.run("cat '\(f)' 2>&1 | head -40", timeout: 10, onLine: { _ in }, onDone: { _ in })
+                        exec.pendingCommand = "cat '\(f)' 2>&1 | head -40"
+                        exec.runPending()
                         openTab("term")
                     }
                 }
