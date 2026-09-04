@@ -56,6 +56,9 @@ struct RootView: View {
     @State private var terminalShown: String = ""
     @State private var chatInput: String = ""
     @State private var showSettings = false
+    @State private var tabs: [String] = ["term"]
+    @State private var atb: String = "term"
+    @State private var revExpand = false
     private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -346,93 +349,184 @@ struct RootView: View {
         }
     }
 
-    // MARK: 右栏终端面板（M1 交付，保留）
+    // MARK: 右栏多 tab 面板
 
     private var terminalPanel: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 2) {
-                HStack(spacing: 5) {
-                    Image(systemName: "terminal.fill").font(.system(size: 10))
-                    Text("终端").font(.system(size: 12, weight: .semibold))
-                }
-                .foregroundStyle(Color.primary)
-                .padding(.vertical, 6).padding(.horizontal, 12)
-                .background(Color(hex: 0xFBFAF7))
-                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8))
-                Spacer()
-            }
-            .padding(.horizontal, 10)
-            .padding(.top, 8)
-            .background(Color(hex: 0xEFEEE9))
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    Text(terminalShown.isEmpty ? "（终端输出将显示在这里）" : terminalShown)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(terminalShown.isEmpty ? Color.secondary : Color(hex: 0xB8E8C8))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .textSelection(.enabled)
-                    Color.clear.frame(height: 1).id("t-bottom")
-                }
-                .background(Color(hex: 0x161816))
-                .onChange(of: terminalShown) { _ in
-                    proxy.scrollTo("t-bottom", anchor: .bottom)
+            if tabs.isEmpty {
+                rightEmpty
+            } else {
+                tabHeader
+                switch atb {
+                case "review": reviewTab
+                case "term": termTab
+                case "files": filesTab
+                default: rightEmpty
                 }
             }
-
-            Divider()
-
-            HStack(spacing: 8) {
-                Text("❯").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(Color.accentColor)
-                TextField(phase == .ready ? "直接执行命令（独立进程）" : "内核启动后可用…", text: $exec.pendingCommand)
-                    .font(.system(size: 13, design: .monospaced))
-                    .textFieldStyle(.plain)
-                    .disabled(phase != .ready)
-                    .onSubmit { exec.runPending() }
-                if exec.isRunning {
-                    Button(action: { exec.stop(); ConsoleHub.appendLine("（已请求停止）") }) {
-                        Image(systemName: "stop.fill")
-                            .foregroundStyle(Color.white).padding(7)
-                            .background(Color.red).cornerRadius(7)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Button(action: { exec.runPending() }) {
-                        Image(systemName: "play.fill")
-                            .foregroundStyle(Color.white).padding(7)
-                            .background(exec.pendingCommand.isEmpty || phase != .ready ? Color.gray.opacity(0.5) : Color.accentColor)
-                            .cornerRadius(7)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(exec.pendingCommand.isEmpty || phase != .ready)
-                }
-            }
-            .padding(10)
-            .background(Color(hex: 0xFBFAF7))
-
-            Divider()
-
-            HStack(spacing: 10) {
-                Text(exec.statusLine)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.secondary).lineLimit(1)
-                Spacer()
-                Picker("", selection: $exec.timeoutIdx) {
-                    Text("30s").tag(0)
-                    Text("120s").tag(1)
-                    Text("不限").tag(2)
-                }
-                .pickerStyle(.segmented).controlSize(.mini).frame(width: 150)
-                .disabled(exec.isRunning)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color(hex: 0xF1F0EB))
         }
         .background(Color(hex: 0xFBFAF7))
     }
 
+    private var tabHeader: some View {
+        HStack(spacing: 2) {
+            ForEach(tabs, id: \.self) { t in
+                HStack(spacing: 5) {
+                    Image(systemName: tabIcon(t)).font(.system(size: 10))
+                    Text(tabTitle(t)).font(.system(size: 12, weight: atb == t ? .semibold : .regular))
+                    Button { closeTab(t) } label: {
+                        Image(systemName: "xmark").font(.system(size: 8)).foregroundStyle(Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .foregroundStyle(atb == t ? Color.primary : Color.secondary)
+                .padding(.vertical, 6).padding(.horizontal, 10)
+                .background(atb == t ? Color(hex: 0xFBFAF7) : Color.clear)
+                .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8))
+                .contentShape(Rectangle())
+                .onTapGesture { atb = t }
+            }
+            Menu {
+                ForEach(["review", "term", "files", "browser"], id: \.self) { t in
+                    if !tabs.contains(t) {
+                        Button(tabTitle(t)) { openTab(t) }
+                    }
+                }
+            } label: {
+                Image(systemName: "plus").font(.system(size: 12))
+                    .padding(.vertical, 6).padding(.horizontal, 8)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .background(Color(hex: 0xEFEEE9))
+    }
+
+    private func tabIcon(_ t: String) -> String {
+        switch t { case "review": return "arrow.triangle.pull"; case "term": return "terminal.fill"; case "browser": return "globe"; default: return "folder" }
+    }
+
+    private func tabTitle(_ t: String) -> String {
+        switch t { case "review": return "审查"; case "term": return "终端"; case "browser": return "浏览器"; case "files": return "文件"; default: return t }
+    }
+
+    private func openTab(_ t: String) {
+        if !tabs.contains(t) { tabs.append(t) }
+        atb = t
+    }
+
+    private func closeTab(_ t: String) {
+        tabs.removeAll { $0 == t }
+        if atb == t { atb = tabs.last }
+    }
+
+    private var rightEmpty: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            ForEach([("审查", "arrow.triangle.pull", "Ctrl+Shift+G"), ("终端", "terminal", "Ctrl+`"), ("浏览器", "globe", "Ctrl+T"), ("文件", "folder", "Ctrl+P")], id: \.1) { item in
+                Button { openTab(item.1) } label: {
+                    HStack {
+                        Image(systemName: item.1 == "term" ? "terminal" : item.1 == "review" ? "git" : item.1 == "browser" ? "globe" : "folder")
+                        Text(item.0).font(.footnote)
+                        Spacer()
+                        Text(item.2).font(.caption2).foregroundStyle(Color.secondary)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(Color.white)
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 30)
+    }
+
+    // MARK: 审查 tab
+
+    private var reviewTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                if agent.messages.isEmpty && (sessChanges?.isEmpty ?? true) {
+                    Text("暂无改动").font(.footnote).foregroundStyle(Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 40)
+                }
+                if let chs = sessChanges, !chs.isEmpty {
+                    ForEach(Array(chs.enumerated()), id: \.offset) { _, c in
+                        VStack(alignment: .leading, spacing: 0) {
+                            Button { revExpand.toggle() } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.triangle.pull").font(.system(size: 10))
+                                    Text(c.path).font(.system(size: 12, design: .monospaced)).lineLimit(1)
+                                    Spacer()
+                                    Text("+\(c.add) −\(c.del)").font(.system(size: 11, design: .monospaced))
+                                }
+                                .padding(8)
+                            }
+                            .buttonStyle(.plain)
+                            if revExpand {
+                                Text(c.diffPreview)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.secondary)
+                                    .padding(8)
+                            }
+                        }
+                        .background(Color(hex: 0xFBFaF7))
+                        .cornerRadius(8)
+                    }
+                }
+            }
+            .padding(10)
+        }
+    }
+
+    private var termTab: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(termLines.enumerated()), id: \.offset) { _, l in
+                        HStack(spacing: 0) {
+                            if l.k == "p" {
+                                Text(l.t).foregroundStyle(Color(hex: 0x8FD0AA))
+                                Text(l.c).foregroundStyle(Color.white)
+                            } else {
+                                Text(l.t).foregroundStyle(l.k == "c" ? Color.white : Color(hex: 0x9A9C93))
+                            }
+                        }
+                    }
+                    Color.clear.frame(height: 1).id("term-bottom")
+                }
+                .padding(12)
+            }
+            .background(Color(hex: 0x161816))
+            .onChange(of: termLines.count) { _ in proxy.scrollTo("term-bottom") }
+        }
+    }
+
+    private var filesTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(WORKSPACE_FILES, id: \.self) { f in
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text").font(.system(size: 10)).foregroundStyle(Color.secondary)
+                        Text(f).font(.system(size: 12, design: .monospaced)).lineLimit(1)
+                    }
+                    .padding(.vertical, 4).padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture { ToastCenter.shared.show("文件查看 M4.5 后续补充", kind: .info) }
+                }
+            }
+            .padding(10)
+        }
+    }
+
+    private var sessChanges: [ToolChange]? { nil }
+
+    private var termLines: [(k: String, t: String, c: String)] {
+        [(k: "p", t: "root@qingshan:~# ", c: "")]
+    }
     // MARK: 流程
 
     private func run() async {
@@ -490,6 +584,19 @@ struct RootView: View {
         }
         return -99
     }
+}
+
+let WORKSPACE_FILES = [
+    "Sources/App/AppDelegate.swift", "Sources/Player/AudioPlayer.swift",
+    "Sources/Core/Logging/LoggerFacade.swift", "Sources/Core/Download/DownloadManager.swift",
+    "Sources/UI/LibraryView.swift", "Package.swift", "README.md", "AGENTS.md",
+]
+
+struct ToolChange {
+    let path: String
+    let add: Int
+    let del: Int
+    let diffPreview: String
 }
 
 // MARK: - 工具消息行（Codex 式单行 + 点开展开输出）
