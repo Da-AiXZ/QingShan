@@ -19,13 +19,20 @@ final class PersistentShell {
     private var initialized = false
     private var pending: PendingRun?
 
-    private struct PendingRun {
+    private final class PendingRun {
         let startMarker: String
         let endMarker: String
         var buffer: String = ""
         let timeout: TimeInterval
         let startedAt = Date()
         let continuation: CheckedContinuation<PersistentShellResult, Never>
+        init(startMarker: String, endMarker: String, timeout: TimeInterval,
+             continuation: CheckedContinuation<PersistentShellResult, Never>) {
+            self.startMarker = startMarker
+            self.endMarker = endMarker
+            self.timeout = timeout
+            self.continuation = continuation
+        }
     }
 
     private func ensureInitialized() {
@@ -37,7 +44,7 @@ final class PersistentShell {
 
     /// console 输出分流入口（RootView 的 outputCallback 喂进来）
     func ingest(_ text: String) {
-        guard var run = pending else { return }
+        guard let run = pending else { return }
         run.buffer += text
 
         // END 标记出现 → 提取退出码与输出切片
