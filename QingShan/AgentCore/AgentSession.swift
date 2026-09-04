@@ -145,20 +145,25 @@ final class AgentSession: ObservableObject {
                     llmHistory.append(.init(role: .user, content: t))
                 }
             case SessionEvent.assistantMessage:
+                // 思考还原为折叠 Think 行（与实时形态一致）
+                if let r = ev.data.reasoning, !r.isEmpty {
+                    var think = ChatMessage.think(String(r.prefix(60)))
+                    think.text = r
+                    think.running = false
+                    messages.append(think)
+                }
                 if let json = ev.data.toolCallsJSON,
                    let data = json.data(using: .utf8),
                    let calls = try? JSONDecoder().decode([LLMToolCall].self, from: data) {
                     llmHistory.append(.init(role: .assistant, content: ev.data.text, toolCalls: calls))
                     if let t = ev.data.text, !t.isEmpty {
-                        var m = ChatMessage.agent(t)
-                        m.reasoning = ev.data.reasoning
-                        messages.append(m)
+                        messages.append(.agent(t))
                     }
                 } else {
-                    var m = ChatMessage.agent(ev.data.text ?? "")
-                    m.reasoning = ev.data.reasoning
-                    messages.append(m)
-                    llmHistory.append(.init(role: .assistant, content: ev.data.text ?? ""))
+                    if let t = ev.data.text {
+                        messages.append(.agent(t))
+                        llmHistory.append(.init(role: .assistant, content: t))
+                    }
                 }
             case SessionEvent.toolCall:
                 lastToolCallId = ev.data.id
