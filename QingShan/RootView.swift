@@ -36,73 +36,7 @@ enum ConsoleHub {
     }
 }
 
-// MARK: - Toast：顶部居中悬浮提示，自动淡出（用户指定形态）
-
-struct Toast: Identifiable, Equatable {
-    enum Kind { case info, warn, error, success }
-    let id = UUID()
-    let text: String
-    let kind: Kind
-}
-
-@MainActor
-final class ToastCenter: ObservableObject {
-    static let shared = ToastCenter()
-    @Published var toasts: [Toast] = []
-
-    func show(_ text: String, kind: Toast.Kind = .info, duration: TimeInterval = 3.5) {
-        let t = Toast(text: text, kind: kind)
-        withAnimation(.easeOut(duration: 0.2)) { toasts.append(t) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-            withAnimation(.easeIn(duration: 0.5)) {
-                self?.toasts.removeAll { $0.id == t.id }
-            }
-        }
-    }
-}
-
-struct ToastOverlay: View {
-    @ObservedObject var center = ToastCenter.shared
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ForEach(center.toasts) { t in
-                HStack(spacing: 8) {
-                    Image(systemName: icon(t.kind))
-                    Text(t.text).font(.footnote).lineLimit(3)
-                }
-                .foregroundStyle(Color.white)
-                .padding(.vertical, 9).padding(.horizontal, 14)
-                .background(bg(t.kind))
-                .cornerRadius(10)
-                .shadow(color: .black.opacity(0.25), radius: 8)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.top, 14)
-        .frame(maxWidth: .infinity)
-        .allowsHitTesting(false)
-    }
-
-    private func icon(_ k: Toast.Kind) -> String {
-        switch k {
-        case .info: return "info.circle.fill"
-        case .warn: return "exclamationmark.triangle.fill"
-        case .error: return "xmark.octagon.fill"
-        case .success: return "checkmark.seal.fill"
-        }
-    }
-
-    private func bg(_ k: Toast.Kind) -> Color {
-        switch k {
-        case .info: return Color(hex: 0x3A3A38).opacity(0.94)
-        case .warn: return Color(hex: 0xB57308).opacity(0.96)
-        case .error: return Color(hex: 0xB3403A).opacity(0.96)
-        case .success: return Color(hex: 0x2F7D4F).opacity(0.96)
-        }
-    }
-}
+// MARK: - Toast 定义在独立 Toast.swift（此处引用）
 
 // MARK: - 根视图（M4 完整三栏：左导航 / 主会话 / 右终端 + 审批卡 + Toast）
 
@@ -312,59 +246,69 @@ struct RootView: View {
 
     private var chatPane: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if agent.messages.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("青山 Agent 已就绪").font(.headline)
-                                Text("对 Agent 说什么都行；它会用 run_command 工具在 Linux 沙箱里执行命令。\n试试：「检查一下工作环境」「帮我写一个 hello.py」「磁盘还剩多少空间」。")
-                                    .font(.subheadline).foregroundStyle(Color.secondary)
-                            }
-                            .padding(.vertical, 40)
-                        }
-                        ForEach(agent.messages) { m in
-                            messageRow(m).id(m.id)
-                        }
-                        if agent.isThinking {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text("Agent 工作中…").font(.footnote).foregroundStyle(Color.secondary)
-                            }
-                        }
-                        Color.clear.frame(height: 8).id("chat-bottom")
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 6)
-                }
-                .onChange(of: agent.messages.count) { _ in
-                    withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("chat-bottom", anchor: .bottom) }
-                }
-                .onChange(of: agent.isThinking) { _ in
-                    proxy.scrollTo("chat-bottom", anchor: .bottom)
-                }
-            }
-
+            chatScroll
             Divider()
-
-            HStack(spacing: 8) {
-                Text("❯").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(Color.accentColor)
-                TextField("对 Agent 说什么…（Enter 发送）", text: $chatInput)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13.5))
-                    .onSubmit(sendChat)
-                    .disabled(agent.pendingApproval != nil)
-                Button(action: sendChat) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(chatInput.trimmingCharacters(in: .whitespaces).isEmpty || agent.isThinking ? Color.gray.opacity(0.4) : Color.accentColor)
-                }
-                .buttonStyle(.plain)
-                .disabled(chatInput.trimmingCharacters(in: .whitespaces).isEmpty || agent.isThinking)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            chatInputBar
         }
+    }
+
+    private var chatScroll: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                chatMessages
+            }
+            .onChange(of: agent.messages.count) { _ in
+                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("chat-bottom", anchor: .bottom) }
+            }
+            .onChange(of: agent.isThinking) { _ in
+                proxy.scrollTo("chat-bottom", anchor: .bottom)
+            }
+        }
+    }
+
+    private var chatMessages: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if agent.messages.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("青山 Agent 已就绪").font(.headline)
+                    Text("对 Agent 说什么都行；它会用 run_command 工具在 Linux 沙箱里执行命令。\n试试：「检查一下工作环境」「帮我写一个 hello.py」「磁盘还剩多少空间」。")
+                        .font(.subheadline).foregroundStyle(Color.secondary)
+                }
+                .padding(.vertical, 40)
+            }
+            ForEach(agent.messages) { m in
+                messageRow(m).id(m.id)
+            }
+            if agent.isThinking {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Agent 工作中…").font(.footnote).foregroundStyle(Color.secondary)
+                }
+            }
+            Color.clear.frame(height: 8).id("chat-bottom")
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
+    }
+
+    private var chatInputBar: some View {
+        HStack(spacing: 8) {
+            Text("❯").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(Color.accentColor)
+            TextField("对 Agent 说什么…（Enter 发送）", text: $chatInput)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13.5))
+                .onSubmit(sendChat)
+                .disabled(agent.pendingApproval != nil)
+            Button(action: sendChat) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(chatInput.trimmingCharacters(in: .whitespaces).isEmpty || agent.isThinking ? Color.gray.opacity(0.4) : Color.accentColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(chatInput.trimmingCharacters(in: .whitespaces).isEmpty || agent.isThinking)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder

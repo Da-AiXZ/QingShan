@@ -293,7 +293,7 @@ final class AgentSession: ObservableObject {
                 guard ToolRegistry.def(named: call.name) != nil else {
                     let out = "未知工具：\(call.name)"
                     messages.append(.agent(out))
-                    log?.append(.agentMessage(text: out))
+                    log?.append(SessionEvent.agentMessage, .init(text: out))
                     llmHistory.append(.init(role: .tool, content: out, toolCallId: call.id))
                     continue
                 }
