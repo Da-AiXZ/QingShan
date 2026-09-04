@@ -685,7 +685,6 @@ struct RootView: View {
         ISHKernel.shared.outputCallback = { data in
             if let s = String(data: data, encoding: .utf8) {
                 ConsoleHub.append(s)
-                Task { @MainActor in PersistentShell.shared.ingest(s) }
             }
         }
 

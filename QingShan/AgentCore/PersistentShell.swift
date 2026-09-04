@@ -2,130 +2,89 @@ import Foundation
 
 // MARK: - 持久 shell（M5 bash-persistent，dsh tool-bash-persistent 语义）
 //
-// 语义对齐 dsh packages/shell/tool-bash-persistent：
-// - 一个常驻交互 shell（boot 后的 /bin/sh -l），Agent 的命令全部注入它执行
-// - 每条命令用一次性 nonce 标记包裹（单物理行，eval 展开），输出按标记切片
-// - 结束标记携带退出码；超时发 Ctrl-C 返回部分输出
-// - stty -echo 抑制回显，避免命令文本混入输出
+// 语义：常驻 shell（boot 后的 /bin/sh -l）+ cd/export 状态跨调用保持。
 //
-// 与 dsh 的差异（M5 范围内刻意简化）：
-// - 超时不 reset 整个 shell（只 Ctrl-C 前台命令，保留持久性）；完整 reset 语义后补
-// - 输出源为全局 console 流（outputCallback 分流），非 scrollback 分页读取
+// 输出捕获采用【文件协议】而非流解析（iSH PTY 流的换行/回显行为不可靠，
+// 真机验收曾出现标记同行/退出码丢失/首字符回显）：
+//   eval 'CMD' >/tmp/.qs_o 2>&1; echo $? >/tmp/.qs_r; touch /tmp/.qs_done; cat /tmp/.qs_o
+// Swift 侧轮询 /tmp/.qs_done（guest /tmp = host Documents/root/data/tmp），
+// 然后直接读 .qs_r（退出码）与 .qs_o（输出）——不受回显/换行/标记影响。
+// cat 把输出回显到终端面板（ConsoleHub 可见，与 HTML 形态一致）。
 
 @MainActor
 final class PersistentShell {
     static let shared = PersistentShell()
 
     private var initialized = false
-    private var pending: PendingRun?
 
-    private final class PendingRun {
-        let startMarker: String
-        let endMarker: String
-        var buffer: String = ""
-        let timeout: TimeInterval
-        let startedAt = Date()
-        let continuation: CheckedContinuation<PersistentShellResult, Never>
-        init(startMarker: String, endMarker: String, timeout: TimeInterval,
-             continuation: CheckedContinuation<PersistentShellResult, Never>) {
-            self.startMarker = startMarker
-            self.endMarker = endMarker
-            self.timeout = timeout
-            self.continuation = continuation
-        }
-    }
+    // guest / = host Documents/root/data（fakefs 布局，终端 mount 输出已证实）
+    private var outURL: URL { FirstRun.rootURL.appendingPathComponent("data/tmp/.qs_o") }
+    private var rcURL: URL { FirstRun.rootURL.appendingPathComponent("data/tmp/.qs_r") }
+    private var doneURL: URL { FirstRun.rootURL.appendingPathComponent("data/tmp/.qs_done") }
+
+    private var readyConfirmed = false
 
     private func ensureInitialized() {
         guard !initialized else { return }
         initialized = true
-        // 抑制回显（dsh：echo suppression only）
+        // 抑制回显（命令文本不再出现在终端流；文件协议下非必需但保持终端干净）
         ISHKernel.shared.sendInputString("stty -echo\n")
-        // 给 stty 生效留出窗口；即便未生效，END 严格解析也能防回显误判
     }
 
-    /// console 输出分流入口（RootView 的 outputCallback 喂进来）
-    func ingest(_ text: String) {
-        guard let run = pending else { return }
-        run.buffer += text
-
-        // END 标记出现 → 提取退出码与输出切片。
-        // 严格解析：END 后必须紧跟数字退出码（stty -echo 未生效时的命令回显
-        // 会把 END 字面带回输出流，其后无数字——不能误判为完成）。
-        if let endRange = run.buffer.range(of: run.endMarker) {
-            let after = String(run.buffer[endRange.upperBound...]).drop { $0 == "\r" || $0 == "\n" }
-            let digits = after.prefix { $0.isNumber }
-            guard let exitCode = Int(digits), !digits.isEmpty else {
-                pending = run   // 回显误匹配，继续等真实 END
-                return
-            }
-
-            let output: String
-            if let startRange = run.buffer.range(of: run.startMarker) {
-                output = String(run.buffer[startRange.upperBound..<endRange.lowerBound])
-            } else {
-                output = ""   // START 被截断丢弃（dsh LOST_PREFIX 语义，M5 简化）
-            }
-            pending = nil
-            let ms = Int(Date().timeIntervalSince(run.startedAt) * 1000)
-            run.continuation.resume(returning: PersistentShellResult(
-                exitCode: exitCode,
-                output: trimmed(output),
-                timedOut: false,
-                durationMs: ms))
-        } else {
-            pending = run
-        }
+    /// 首条命令的就绪探测：注入后 3s 仍无 done 文件则重发（最多 2 次），
+    /// 防 boot 后交互 shell 尚未就绪时命令被吞导致整轮超时。
+    private func reinjectIfNeeded(_ wrapped: String, startedAt: Date, tries: inout Int) {
+        guard !readyConfirmed, Date().timeIntervalSince(startedAt) > 3, tries < 2 else { return }
+        tries += 1
+        ISHKernel.shared.sendInputString(wrapped + "\n")
     }
 
     /// 在持久 shell 中执行一条命令（cd/export 等状态跨调用保持）
     func run(_ command: String, timeout: TimeInterval) async -> PersistentShellResult {
         ensureInitialized()
+        let fm = FileManager.default
+        for u in [outURL, rcURL, doneURL] { try? fm.removeItem(at: u) }
 
-        let nonce = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
-        let startMarker = "__QS_PS_START_\(nonce)__"
-        let endMarker = "__QS_PS_END_\(nonce)__"
+        // POSIX 单引号转义：' -> '\''
+        let escaped = command.replacingOccurrences(of: "'", with: "'\\''")
+        let wrapped = "eval '\(escaped)' >/tmp/.qs_o 2>&1; "
+            + "echo $? >/tmp/.qs_r; touch /tmp/.qs_done; cat /tmp/.qs_o"
+        ISHKernel.shared.sendInputString(wrapped + "\n")
 
-        // 单物理行（避免 PS2 泄漏提示符/标记源文）。
-        // 注意：不能像 dsh 那样用 `eval -- `——Alpine /bin/sh 是 ash/dash，
-        // 其 eval 不支持 -- 选项结束符，会把 -- 当命令执行报 "--: not found"。
-        let wrapped = "printf '%s\\n' \(bashQuote(startMarker)); "
-            + "eval \(bashQuote(command)); "
-            + "__qs_status=$?; "
-            + "printf '%s%s\\n' \(bashQuote(endMarker)) \"$__qs_status\""
-
-        return await withCheckedContinuation { cont in
-            let run = PendingRun(startMarker: startMarker,
-                                 endMarker: endMarker,
-                                 timeout: timeout,
-                                 continuation: cont)
-            pending = run
-            ISHKernel.shared.sendInputString(wrapped + "\n")
-
-            // 超时看门狗：Ctrl-C 前台命令 + 部分输出（退出码 124 = timeout 惯例）
-            Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                await MainActor.run { self?.timeoutFired(run) }
+        let startedAt = Date()
+        var reinjectTries = 0
+        // 轮询完成文件（60ms；iSH fakefs 是宿主真实文件，读它是本地 IO）
+        while Date().timeIntervalSince(startedAt) < timeout {
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            if fm.fileExists(atPath: doneURL.path) {
+                readyConfirmed = true
+            } else {
+                reinjectIfNeeded(wrapped, startedAt: startedAt, tries: &reinjectTries)
+                continue
             }
+            let exit = Int(String(data: fm.contents(atPath: rcURL.path) ?? Data(),
+                                  encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "") ?? -1
+            let output = String(data: fm.contents(atPath: outURL.path) ?? Data(),
+                                encoding: .utf8) ?? ""
+            try? fm.removeItem(at: doneURL)
+            let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
+            return PersistentShellResult(exitCode: exit, output: trimmed(output),
+                                         timedOut: false, durationMs: ms)
         }
-    }
 
-    private func timeoutFired(_ run: PendingRun) {
-        guard pending === run else { return }   // 已正常完成
-        ISHKernel.shared.sendInputString("\u{0003}")   // Ctrl-C 终止前台命令
-        pending = nil
-        let partial = partialOutput(of: run)
-        let ms = Int(Date().timeIntervalSince(run.startedAt) * 1000)
-        run.continuation.resume(returning: PersistentShellResult(
+        // 超时：Ctrl-C 前台命令，尽力读部分输出（退出码 124 = timeout 惯例）
+        ISHKernel.shared.sendInputString("\u{0003}")
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        let partial = String(data: fm.contents(atPath: outURL.path) ?? Data(),
+                             encoding: .utf8) ?? ""
+        for u in [outURL, rcURL, doneURL] { try? fm.removeItem(at: u) }
+        let ms = Int(Date().timeIntervalSince(startedAt) * 1000)
+        return PersistentShellResult(
             exitCode: 124,
-            output: (partial.isEmpty ? "" : partial + "\n")
-                + "[命令超时（\(Int(run.timeout))s）——已发送 Ctrl-C，以下为部分输出]",
-            timedOut: true,
-            durationMs: ms))
-    }
-
-    private func partialOutput(of run: PendingRun) -> String {
-        guard let startRange = run.buffer.range(of: run.startMarker) else { return "" }
-        return trimmed(String(run.buffer[startRange.upperBound...]))
+            output: (trimmed(partial).isEmpty ? "" : trimmed(partial) + "\n")
+                + "[命令超时（\(Int(timeout))s）——已发送 Ctrl-C，以上为部分输出]",
+            timedOut: true, durationMs: ms)
     }
 
     private func trimmed(_ s: String) -> String {
@@ -133,18 +92,6 @@ final class PersistentShell {
         while r.hasPrefix("\n") || r.hasPrefix("\r") { r.removeFirst() }
         while r.hasSuffix("\n") || r.hasSuffix("\r") { r.removeLast() }
         return r
-    }
-
-    /// dsh quoteForBash：$'...' 引用 + 转义（\\ ' \r \n）
-    private func bashQuote(_ value: String) -> String {
-        var s = value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        // $ 字符在 $'...' 中不需转义，但为防标记被环境变量展开干扰，统一按 dsh 原样即可
-        _ = s
-        return "$'\(s)'"
     }
 }
 
