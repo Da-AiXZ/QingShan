@@ -35,9 +35,8 @@ final class SessionStore: ObservableObject {
         }
         let metas: [SessionMeta] = files.filter { $0.pathExtension == "jsonl" }.compactMap { url in
             let id = url.deletingPathExtension().lastPathComponent
-            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))??.contentModificationDate
-                ?? (try? fm.attributesOfItem(atPath: url.path)[.modificationDate] as? Date)
-                ?? .distantPast
+            let attrs = try? fm.attributesOfItem(atPath: url.path)
+            let date = attrs?[.modificationDate] as? Date ?? .distantPast
             let title = titleOf(id: id, fallback: id)
             return SessionMeta(id: id, title: title, updatedAt: date, projectID: "workspace")
         }
