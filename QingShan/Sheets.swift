@@ -106,15 +106,146 @@ struct SheetEmptyState: View {
 
 struct MemoriesSheet: View {
     let onClose: () -> Void
+    @ObservedObject private var mem = MemoryStore.shared
+    @State private var agentsDraft = ""
+    @State private var editingAgents = false
+    @State private var pipelineRunning = false
+    @State private var tick = 0
 
     var body: some View {
         SheetShell(title: "记忆", icon: "brain", onClose: onClose) {
-            AnyView(
-                SheetEmptyState(icon: "brain",
-                                title: "暂无记忆条目",
-                                detail: "记忆系统将在 M6 交付：Agent 会自动提炼重要事实，\n按主题组织、可查看可编辑，并支持淘汰。")
-            )
+            AnyView(content)
         }
+        .onAppear { agentsDraft = (try? String(contentsOf: MemoryStore.agentsMDURL, encoding: .utf8)) ?? "" }
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                // 统计卡
+                HStack(spacing: 8) {
+                    statCard("\(mem.entries.count)", "记忆条目")
+                    statCard("\(mem.entries.filter { ($0.usageCount) > 0 }.count)", "被引用过")
+                    statCard(pipelineRunning ? "…" : (mem.lastPhase1At == nil ? "—" : "✓"), "提取管线")
+                }
+                .frame(maxWidth: .infinity)
+
+                // AGENTS.md
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Label("AGENTS.md · 项目指令（每次会话恒定注入）", systemImage: "book")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Button(editingAgents ? "完成" : "编辑") {
+                            if editingAgents {
+                                try? agentsDraft.write(to: MemoryStore.agentsMDURL, atomically: true, encoding: .utf8)
+                                ToastCenter.shared.show("AGENTS.md 已保存，新会话生效", kind: .success)
+                            }
+                            editingAgents.toggle()
+                        }
+                        .font(.system(size: 12)).buttonStyle(.plain)
+                        .foregroundStyle(Color(hex: 0xE0833C))
+                    }
+                    if editingAgents {
+                        TextEditor(text: $agentsDraft)
+                            .font(.system(size: 11.5, design: .monospaced))
+                            .frame(height: 140)
+                            .padding(6)
+                            .background(Color.black.opacity(0.04))
+                            .cornerRadius(8)
+                    } else if agentsDraft.isEmpty {
+                        Text("（未设置。写在这里的指令会注入每次会话，例如「回复保持简短」「我是 iOS 开发者」）")
+                            .font(.system(size: 11)).foregroundStyle(Color(hex: 0xA8A49C))
+                    } else {
+                        Text(agentsDraft)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.secondary)
+                    }
+                }
+                .padding(12)
+                .background(Color(hex: 0xFBFaF7))
+                .cornerRadius(10)
+
+                // 条目列表
+                HStack {
+                    Text("记忆条目（21 天未引用自动淘汰）")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    Button {
+                        pipelineRunning = true
+                        Task {
+                            await MemoryPipeline.shared.kick(force: true)
+                            pipelineRunning = false
+                            tick += 1
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if pipelineRunning { ProgressView().controlSize(.mini) }
+                            Text("立即整理").font(.system(size: 11))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color(hex: 0xE0833C))
+                    .disabled(pipelineRunning)
+                }
+                if mem.entries.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "brain").font(.system(size: 22))
+                            .foregroundStyle(Color(hex: 0xC9C6BE))
+                        Text("暂无记忆条目")
+                            .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Color(hex: 0x4A4840))
+                        Text("和 Agent 聊几轮有内容的天，退到后台时它会自动提炼可复用的记忆。")
+                            .font(.system(size: 11)).foregroundStyle(Color(hex: 0xA8A49C))
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 26)
+                } else {
+                    ForEach(mem.entries) { e in
+                        HStack(alignment: .top, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(e.content).font(.system(size: 12))
+                                HStack(spacing: 10) {
+                                    Text(e.id).font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(Color(hex: 0xA8A49C))
+                                    Text("引用 \(e.usageCount)")
+                                        .font(.system(size: 10)).foregroundStyle(Color(hex: 0x8A8894))
+                                    if let lu = e.lastUsage {
+                                        Text("最近 \(lu.formatted(.relative(presentation: .named))))")
+                                            .font(.system(size: 10)).foregroundStyle(Color(hex: 0xA8A49C))
+                                    }
+                                }
+                            }
+                            Spacer()
+                            Button {
+                                mem.deleteEntry(id: e.id)
+                                tick += 1
+                            } label: {
+                                Image(systemName: "trash").font(.system(size: 10))
+                                    .foregroundStyle(Color.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(10)
+                        .background(Color(hex: 0xFBFaF7))
+                        .cornerRadius(10)
+                    }
+                }
+            }
+            .padding(14)
+            .id(tick)
+        }
+    }
+
+    private func statCard(_ v: String, _ label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(v).font(.system(size: 17, weight: .bold))
+            Text(label).font(.system(size: 10.5)).foregroundStyle(Color.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(Color(hex: 0xF1EFEB))
+        .cornerRadius(10)
     }
 }
 

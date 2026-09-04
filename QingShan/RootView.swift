@@ -61,6 +61,7 @@ struct RootView: View {
     @State private var leftW: CGFloat = 252
     @State private var rightW: CGFloat = 400
     @State private var sandboxFiles: [String] = []
+    @Environment(\.scenePhase) private var scenePhase
     private let timer = Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()
 
     private var activeProject: Project? { ProjectStore.project(of: agent.sessionID) }
@@ -114,6 +115,11 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("sessions.changed"))) { _ in
             store.refresh()
+        }
+        .onChange(of: scenePhase) { sp in
+            if sp == .background {
+                Task { await MemoryPipeline.shared.kick() }
+            }
         }
     }
 
@@ -374,7 +380,7 @@ struct RootView: View {
         case .agent:
             HStack(alignment: .top, spacing: 0) {
                 Text("•").foregroundStyle(Color.secondary).frame(width: 15, alignment: .leading)
-                Text(m.text).textSelection(.enabled)
+                Text(m.text.strippingMemCite).textSelection(.enabled)
             }
         case .think:
             ThinkRowView(m: m)
@@ -712,6 +718,9 @@ struct RootView: View {
         store.refresh()
         phase = .ready
 
+        // M6：启动后台跑记忆管线（提取未处理会话 → 整合）
+        Task { await MemoryPipeline.shared.kick() }
+
         // 沙箱真实文件列表（@ 引用与文件 tab 数据源；ls 一次缓存）
         _ = await Task.detached(priority: .utility) { () -> [String] in
             let r = ISHShellExecutor.executeCommandSync(
@@ -729,6 +738,15 @@ struct RootView: View {
             Thread.sleep(forTimeInterval: 0.1)
         }
         return -99
+    }
+}
+
+extension String {
+    /// 剥离记忆引用块（用户不需要看到 <qs-mem-cite>…，Codex 同款处理）
+    var strippingMemCite: String {
+        replacingOccurrences(of: "<qs-mem-cite>[^<]*</qs-mem-cite>", with: "",
+                             options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

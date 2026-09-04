@@ -97,6 +97,11 @@ final class AgentSession: ObservableObject {
     /// LLM 历史（与 UI messages 平行；OpenAI 协议形态）
     var llmHistory: [LLMMessage] = []
 
+    /// 会话启动时的完整系统提示：基础人设 + AGENTS.md + 记忆摘要（Codex 三个注入面）
+    static var initialSystemPrompt: String {
+        systemPrompt + MemoryStore.shared.agentsFragment() + MemoryStore.shared.summaryFragment()
+    }
+
     static let systemPrompt = """
         你是青山（QingShan），运行在用户 iPad 上的本地 AI Agent。
         环境：你的命令在设备内置的 Alpine Linux (aarch64) 沙箱中以 root 身份执行，输出会原样返回给你。
@@ -118,7 +123,7 @@ final class AgentSession: ObservableObject {
         sessionTitle = title
         messages.removeAll()
         allowedTools.removeAll()
-        llmHistory = [.init(role: .system, content: Self.systemPrompt)]
+        llmHistory = [.init(role: .system, content: Self.initialSystemPrompt)]
         ConsoleHub.clear()
         ConsoleHub.appendLine("— 新会话 \(sessionID)（大脑：\(brainName())）—")
         NotificationCenter.default.post(name: Notification.Name("sessions.changed"), object: nil)
@@ -133,7 +138,7 @@ final class AgentSession: ObservableObject {
         sessionID = id
         log = SessionLog(sessionID: id)
         messages.removeAll()
-        llmHistory = [.init(role: .system, content: Self.systemPrompt)]
+        llmHistory = [.init(role: .system, content: Self.initialSystemPrompt)]
         turnNo = 0
         allowedTools.removeAll()
 
@@ -207,7 +212,10 @@ final class AgentSession: ObservableObject {
         messages.append(.user(t))
         llmHistory.append(.init(role: .user, content: t))
         log?.append(SessionEvent.userMessage, .init(text: t))
-        Task { await runTurn(userText: t) }
+        Task {
+            await runTurn(userText: t)
+            harvestMemoryCitations()
+        }
     }
 
     // MARK: turn/step 循环（流式 + 审批 + 工具）
@@ -396,6 +404,20 @@ final class AgentSession: ObservableObject {
         reason = "max-steps"
         messages.append(.agent("（步数护栏触发：\(maxSteps) 步未收敛，turn 终止。）"))
         log?.append(SessionEvent.turnEnd, .init(turn: turnNo, reason: reason))
+    }
+
+    /// 引用闭环（Codex <oai-mem-citation> → usage 回写）：扫描最后一条 agent 回复中的引用块
+    private func harvestMemoryCitations() {
+        guard let last = messages.last(where: { $0.role == .agent }),
+              let regex = try? NSRegularExpression(pattern: "<qs-mem-cite>([^<]+)</qs-mem-cite>") else { return }
+        let ns = last.text as NSString
+        var rawIDs: [String] = []
+        for match in regex.matches(in: last.text, range: NSRange(location: 0, length: ns.length)) {
+            let inner = ns.substring(with: match.range(at: 1))
+            rawIDs += inner.split(separator: " ").map(String.init)
+        }
+        guard !rawIDs.isEmpty else { return }
+        MemoryStore.shared.markUsed(ids: MemoryStore.shared.resolveIDs(rawIDs))
     }
 
     /// 工具调用的展示命令
