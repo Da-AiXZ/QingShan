@@ -289,7 +289,6 @@ final class AgentSession: ObservableObject {
                 messages[i].running = false
                 messages[i].summary = String(reasoningAcc.prefix(60))
             }
-            messages[messages.count - 1].reasoning = reasoningAcc.isEmpty ? nil : reasoningAcc
             let callsJSON = (try? JSONEncoder().encode(toolCalls)).flatMap { String(data: $0, encoding: .utf8) }
             log?.append(SessionEvent.assistantMessage, .init(turn: turnNo, step: stepNo,
                                                              text: full,
@@ -361,6 +360,7 @@ final class AgentSession: ObservableObject {
                         continue
                     case .allowAlways:
                         allowedTools.insert(call.name)
+                        ToastCenter.shared.show("\(call.name) 已在本会话始终允许", kind: .success)
                     case .allowOnce:
                         break
                     }
