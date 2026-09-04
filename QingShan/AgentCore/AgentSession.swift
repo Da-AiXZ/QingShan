@@ -1,24 +1,35 @@
 import Foundation
 import SwiftUI
 
-// MARK: - 会话消息模型（UI 层，由事件重放或实时追加生成）
+// MARK: - 会话消息模型（UI 层）
 
 struct ChatMessage: Identifiable {
     let id = UUID()
     let role: Role
-    var text: String          // user/agent：正文；tool：命令或工具名
+    var text: String
     var output: String?
     var exitCode: Int?
     var durationMs: Int?
     var running: Bool = false
     var reasoning: String?
-    var denied: Bool = false  // 工具被用户拒绝
+    var denied: Bool = false
+    var summary: String = ""     // think 行摘要
+    var open: Bool = false       // think 展开态
+    var decision: String?        // approval 决定
+    var reasonText: String = ""  // approval 理由
 
-    enum Role { case user, agent, tool }
+    enum Role { case user, agent, tool, think, approval }
 
     static func user(_ t: String) -> ChatMessage { ChatMessage(role: .user, text: t) }
     static func agent(_ t: String) -> ChatMessage { ChatMessage(role: .agent, text: t) }
     static func tool(_ c: String) -> ChatMessage { ChatMessage(role: .tool, text: c) }
+    static func think(_ summary: String) -> ChatMessage {
+        var m = ChatMessage(role: .think, text: ""); m.summary = summary; m.running = true; return m
+    }
+    static func approvalCard(_ command: String, reason: String) -> ChatMessage {
+        var m = ChatMessage(role: .approval, text: "Agent 想执行命令")
+        m.output = command; m.reasonText = reason; return m
+    }
 }
 
 // MARK: - 工具注册表（M4：run_command / read_file / write_file）
@@ -62,8 +73,6 @@ enum ToolRegistry {
 }
 
 // MARK: - AgentSession：turn/step 循环（流式+审批） + 事件溯源 + resume + auto-compact
-//
-// 循环语义对齐 dsh core/agent-loop（见「dsh语义对照笔记.md」）。
 
 @MainActor
 final class AgentSession: ObservableObject {
@@ -81,8 +90,9 @@ final class AgentSession: ObservableObject {
     private let maxSteps = 12
     private let compactThresholdTokens = 8_000
     private var turnNo = 0
-    private var allowedTools: Set<String> = []   // 会话级"始终允许"记忆
+    private var allowedTools: Set<String> = []
     private var approvalCont: CheckedContinuation<ApprovalDecision, Never>?
+    private var approvalMsgId: UUID?
 
     /// LLM 历史（与 UI messages 平行；OpenAI 协议形态）
     var llmHistory: [LLMMessage] = []
@@ -103,6 +113,7 @@ final class AgentSession: ObservableObject {
     func startNew(title: String) {
         sessionID = "s" + String(Int(Date().timeIntervalSince1970 * 1000))
         log = SessionLog(sessionID: sessionID)
+        log?.start(title: title)          // header 立即落盘（左栏立即可见）
         turnNo = 0
         sessionTitle = title
         messages.removeAll()
@@ -176,7 +187,6 @@ final class AgentSession: ObservableObject {
         return !messages.isEmpty
     }
 
-    /// 恢复最近的会话
     @discardableResult
     func resumeLatest() -> Bool {
         guard let id = SessionLog.latestSessionID() else { return false }
@@ -212,13 +222,13 @@ final class AgentSession: ObservableObject {
             stepNo += 1
             log?.append(SessionEvent.stepStart, .init(turn: turnNo, step: stepNo))
 
+            // ---- 一步：LLM 流式调用（思考→Think 行；正文→assistant 行；限流自动重试） ----
             messages.append(.agent(""))
             var full = ""
             var reasoningAcc = ""
             var toolCalls: [LLMToolCall] = []
             var streamError: String?
 
-            // LLM 调用（限流/服务器错误自动退避重试，对齐 dsh llm-retry：最多 3 次）
             var attempt = 0
             retryLoop: while true {
                 attempt += 1
@@ -230,15 +240,27 @@ final class AgentSession: ObservableObject {
                         switch ev {
                         case .reasoningDelta(let d):
                             reasoningAcc += d
-                            messages[messages.count - 1].reasoning = reasoningAcc
+                            // Codex 式 Think 行：spinner Thinking → 折叠可展开
+                            if messages.last?.role == .think, messages.last?.running == true {
+                                messages[messages.count - 1].text = reasoningAcc
+                            } else {
+                                var m = ChatMessage.think("正在整理思路…")
+                                m.text = reasoningAcc
+                                messages.append(m)
+                            }
                         case .textDelta(let d):
                             hadDelta = true
                             full += d
+                            // 正文行（独立于 Think 行）
+                            if messages.last?.role != .agent {
+                                messages.append(.agent(""))
+                            }
                             messages[messages.count - 1].text = full
                             log?.append(SessionEvent.assistantChunk, .init(turn: turnNo, step: stepNo, text: d))
                         case .done(let text, let calls, let fr, _, _):
                             if full.isEmpty, !text.isEmpty {
                                 full = text
+                                if messages.last?.role != .agent { messages.append(.agent("")) }
                                 messages[messages.count - 1].text = text
                             }
                             toolCalls = calls
@@ -252,7 +274,6 @@ final class AgentSession: ObservableObject {
                             || desc.contains("503") || desc.contains("rate_limit") || desc.contains("Rate"))
                     if retryable {
                         let secs = 2 * attempt * attempt
-                        ConsoleHub.appendLine("⚠ LLM 调用受限，\(secs)s 后自动重试（第 \(attempt)/3 次）…")
                         ToastCenter.shared.show("模型调用受限，\(secs)s 后自动重试（\(attempt)/3）", kind: .warn)
                         try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
                         continue retryLoop
@@ -263,8 +284,13 @@ final class AgentSession: ObservableObject {
                 break
             }
 
-            let callsJSON = (try? JSONEncoder().encode(toolCalls)).flatMap { String(data: $0, encoding: .utf8) }
+            // Think 行收尾（折叠）+ assistant/message 事件（含思考块与 interrupted 语义）
+            if let i = messages.lastIndex(where: { $0.role == .think && $0.running }) {
+                messages[i].running = false
+                messages[i].summary = String(reasoningAcc.prefix(60))
+            }
             messages[messages.count - 1].reasoning = reasoningAcc.isEmpty ? nil : reasoningAcc
+            let callsJSON = (try? JSONEncoder().encode(toolCalls)).flatMap { String(data: $0, encoding: .utf8) }
             log?.append(SessionEvent.assistantMessage, .init(turn: turnNo, step: stepNo,
                                                              text: full,
                                                              toolCallsJSON: toolCalls.isEmpty ? nil : callsJSON,
@@ -290,7 +316,7 @@ final class AgentSession: ObservableObject {
             llmHistory.append(.init(role: .assistant, content: full.isEmpty ? nil : full, toolCalls: toolCalls))
             if full.isEmpty { messages.removeLast() }
 
-            // 执行本轮全部工具调用（含审批）
+            // ---- 执行本轮工具调用（含审批内联卡） ----
             for call in toolCalls {
                 let args = (try? JSONSerialization.jsonObject(with: Data(call.arguments.utf8))) as? [String: Any] ?? [:]
 
@@ -307,14 +333,20 @@ final class AgentSession: ObservableObject {
                     && ApprovalService.needsApproval(command: command, policy: policy)
 
                 if needsApproval {
-                    let req = ApprovalRequest(toolName: call.name, command: command,
-                                              reason: ApprovalService.reason(command: command, policy: policy))
-                    pendingApproval = req
-                    ToastCenter.shared.show("Agent 请求批准：\(command.prefix(40))", kind: .warn, duration: 5)
+                    // 审批卡内联在消息流（照 HTML MsgApproval，非弹窗）
+                    let card = ChatMessage.approvalCard("Agent 想执行命令", command: command,
+                                                        reason: ApprovalService.reason(command: command, policy: policy))
+                    messages.append(card)
+                    log?.append("approval/request", .init(text: command, reason: card.reasonText))
+                    ToastCenter.shared.show("Agent 请求批准", kind: .warn, duration: 3)
                     let decision = await withCheckedContinuation { (cont: CheckedContinuation<ApprovalDecision, Never>) in
                         self.approvalCont = cont
+                        self.approvalMsgId = card.id
                     }
                     pendingApproval = nil
+                    if let i = messages.firstIndex(where: { $0.id == card.id }) {
+                        messages[i].decision = decision.rawValue
+                    }
                     log?.append("approval/decision", .init(text: decision.rawValue, command: command))
 
                     switch decision {
@@ -327,10 +359,10 @@ final class AgentSession: ObservableObject {
                                                                    id: call.id, exitCode: -1,
                                                                    output: "（用户拒绝执行）"))
                         continue
-                    case .allowOnce:
-                        break
                     case .allowAlways:
                         allowedTools.insert(call.name)
+                    case .allowOnce:
+                        break
                     }
                 }
 
@@ -353,7 +385,6 @@ final class AgentSession: ObservableObject {
             }
 
             log?.append(SessionEvent.stepEnd, .init(turn: turnNo, step: stepNo))
-            // 工具结果已入历史 → 下一步（模型消化结果）
         }
 
         reason = "max-steps"
@@ -361,7 +392,7 @@ final class AgentSession: ObservableObject {
         log?.append(SessionEvent.turnEnd, .init(turn: turnNo, reason: reason))
     }
 
-    /// 工具调用的展示命令（读/写文件合成可读命令形态）
+    /// 工具调用的展示命令
     private func toolCommand(call: LLMToolCall, args: [String: Any]) -> String {
         switch call.name {
         case "read_file":
@@ -407,8 +438,12 @@ final class AgentSession: ObservableObject {
     // MARK: 审批
 
     func resolveApproval(_ decision: ApprovalDecision) {
+        if let mid = approvalMsgId, let i = messages.firstIndex(where: { $0.id == mid }) {
+            messages[i].decision = decision.rawValue
+        }
         approvalCont?.resume(returning: decision)
         approvalCont = nil
+        approvalMsgId = nil
     }
 
     // MARK: auto-compact

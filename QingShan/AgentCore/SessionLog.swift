@@ -55,9 +55,9 @@ struct SessionEvent: Codable, Equatable {
     static let assistantChunk = "assistant/chunk"
     static let compact = "compact"
 
-    static func sessionHeader(id: String, seq: Int) -> SessionEvent {
+    static func sessionHeader(id: String, seq: Int, title: String = "") -> SessionEvent {
         .init(seq: seq, type: sessionHeaderType,
-              data: .init(version: 0, id: id, createdAt: Date().timeIntervalSince1970))
+              data: .init(version: 0, id: id, createdAt: Date().timeIntervalSince1970, text: title))
     }
 }
 
@@ -80,6 +80,19 @@ final class SessionLog {
     init(sessionID: String) {
         self.sessionID = sessionID
         url = Self.sessionsDir.appendingPathComponent("\(sessionID).jsonl")
+    }
+
+    /// 立即写入 header（新会话创建时调用，文件即刻落盘）
+    func start(title: String) {
+        queue.sync {
+            guard !headerWritten else { return }
+            if !FileManager.default.fileExists(atPath: url.path) {
+                FileManager.default.createFile(atPath: url.path, contents: nil)
+            }
+            writeLine(SessionEvent.sessionHeader(id: sessionID, seq: 0, title: title))
+            nextSeq = 1
+            headerWritten = true
+        }
     }
 
     /// 追加事件（自动分配 seq；首事件自动写 session header 行）
