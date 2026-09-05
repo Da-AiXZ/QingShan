@@ -5,7 +5,9 @@
 
 ## 项目是什么
 
-**青山**：iPad 本地 AI Agent 应用。SwiftUI 原生 UI，内嵌 iSH ARM64 Linux 沙箱（Alpine 3.21），BYOK 接 DeepSeek/OpenAI 兼容 API。体验对标 OpenAI Codex CLI 与开源项目 dsh（DeepSeek Harness）。仅作者本人使用，TrollStore 侧载未签名 IPA，GitHub Actions 云构建（开发机为 Windows，无本地 macOS）。
+**青山**：作者自己的 iPad 本地 AI Agent 应用。SwiftUI 原生 UI，内嵌 iSH ARM64 Linux 沙箱（Alpine 3.21），BYOK 接 DeepSeek/OpenAI 兼容 API。仅作者本人使用，TrollStore 侧载未签名 IPA，GitHub Actions 云构建（开发机为 Windows，无本地 macOS）。
+
+> 定位澄清（2026-09-05）：青山**不是**"iPad 上的 Codex"——它是作者自己的项目。外部开源项目只是**局部参考**：dsh = Agent 工程架构语义的参考；Codex = 记忆系统设计参考（dsh 无记忆系统）+ 界面形态参考之一；OpenMinis = iSH 集成方式的参考实现。UI 最终基准是作者自制的 HTML 原型（agent-prototype.html）。
 
 - 仓库：`github.com/Da-AiXZ/QingShan`（公开，GPLv3）
 - 目标系统：iOS 16.0+（TrollStore 侧载不支持 iOS 26，iOS 26 需 LiveContainer/SideStore 替代）

@@ -1,6 +1,6 @@
 # 青山 (QingShan)
 
-跑在 iPad 上的本地 AI Agent —— SwiftUI 原生界面 + iSH(ARM64) Linux 沙箱（Alpine 3.21）执行底座 + Codex 语义记忆系统。对齐 [dsh](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 官方 Harness）的 Agent 语义。
+作者自己的 iPad 本地 AI Agent —— SwiftUI 原生界面 + 内嵌 iSH(ARM64) Linux 沙箱（Alpine 3.21）执行底座。Agent 工程架构参考 [dsh](https://github.com/deepseek-ai/deepseek-harness)（DeepSeek 官方 Harness），记忆系统设计参考 Codex（补 dsh 之缺），界面以自研 HTML 原型为基准。
 
 - 状态：**M0-M6 ✅ 已完成并真机验收**（沙箱/执行桥/事件溯源/真模型/工具审批/持久 PTY/记忆系统）；当前进行健壮性加固（批 2）与能力扩展（M7）。详细进度见 [docs/完成度总账.md](docs/完成度总账.md)。
 
