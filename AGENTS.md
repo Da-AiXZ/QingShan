@@ -8,6 +8,7 @@
 **青山**：iPad 本地 AI Agent 应用。SwiftUI 原生 UI，内嵌 iSH ARM64 Linux 沙箱（Alpine 3.21），BYOK 接 DeepSeek/OpenAI 兼容 API。体验对标 OpenAI Codex CLI 与开源项目 dsh（DeepSeek Harness）。仅作者本人使用，TrollStore 侧载未签名 IPA，GitHub Actions 云构建（开发机为 Windows，无本地 macOS）。
 
 - 仓库：`github.com/Da-AiXZ/QingShan`（公开，GPLv3）
+- 目标系统：iOS 16.0+（TrollStore 侧载不支持 iOS 26，iOS 26 需 LiveContainer/SideStore 替代）
 - Bundle ID：`com.qingshan.juyang`
 
 ## 仓库地图
@@ -30,7 +31,8 @@
 2. `docs/dsh语义对照笔记.md` — dsh/Codex 语义对照表（含每轮踩坑记录）
 3. `docs/审查/01~04` — 四份独立审计报告（带双向源码行号证据）
 4. 上层工作区（`../`）：`iOS端Agent-修正版架构方案.md`（架构基准）、`Codex记忆系统调研与移植方案.md`（记忆蓝本）
-5. 参考源码（只读基准，勿改）：`../repos/deepseek-harness-master/`（dsh，TypeScript）、`../repos/codex-rust-v0.153.0-alpha.6/`（Codex，Rust）、`../repos/OpenMinis-main/`（Swift+iSH 参考）、`../repos/ish-arm64-master/`
+5. 对标分析手册（最新）：`docs/analysis/01-dsh参数全量对照.md`、`02-iSH环境差异手册.md`、`03-iOS生命周期影响矩阵.md`、`04-失败模式与安全对抗规格.md`、`05-外部依赖情报档案.md`、`06-文档一致性审查.md`、`07-dsh全量解读手册.md`、`08-Codex机制补充解读手册.md`、`09-dsh环境假设与iSH能力映射.md`
+6. 参考源码（只读基准，勿改。注意 repos 下有版本号子目录）：`../repos/deepseek-harness/deepseek-harness-master/`（dsh，TypeScript）、`../repos/codex-rust/codex-rust-v0.153.0-alpha.6/`（Codex，Rust）、`../repos/OpenMinis/OpenMinis-main/`（Swift+iSH 参考）、`../repos/ish-arm64/ish-arm64-master/`
 
 ## 构建与验证
 

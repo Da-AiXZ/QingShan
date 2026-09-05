@@ -1,5 +1,7 @@
 # 03 · 青山记忆系统对照 Codex memories 逐语义审查报告
 
+> 📸 快照声明：本报告反映 **批 1 修复前** 的代码状态。此后批 1（12 项 P0）与批 1.5 已修复其中部分问题（如 12 步→48 步、30s→分级超时、8k→64k 窗口、审批无锚点检查删除），现行状态以 `docs/完成度总账.md` 为准。
+
 - 审计员：audit-codex-mem
 - 日期：2026-09-05
 - 基准：codex-rust v0.153.0-alpha.6（`codex-rs/memories/*`、`codex-rs/ext/memories/*`、`codex-rs/state/memory_migrations/0001_memories.sql`、`codex-rs/core/src/agents_md.rs`、`codex-rs/core/src/memory_usage.rs`、`codex-rs/core/src/stream_events_utils.rs`）——全部逐文件亲读
