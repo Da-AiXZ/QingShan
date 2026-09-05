@@ -122,7 +122,8 @@ final class SettingsStore: ObservableObject {
     private init() {
         let ud = UserDefaults.standard
         baseURL = ud.string(forKey: Self.udBaseKey) ?? "https://api.deepseek.com/v1"
-        model = ud.string(forKey: Self.udModelKey) ?? "deepseek-chat"
+        // deepseek-chat/reasoner 已于 2026-07-24 下架（官方文档），默认改 v4-flash
+        model = ud.string(forKey: Self.udModelKey) ?? "deepseek-v4-flash"
         apiKey = Keychain.load(key: Self.kcAPIKey) ?? ""
     }
 

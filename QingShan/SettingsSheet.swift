@@ -44,7 +44,7 @@ struct SettingsSheet: View {
                                 .font(.system(size: 12, design: .monospaced))
                         }
                         settingRow("模型名") {
-                            TextField("deepseek-chat", text: $st.model)
+                            TextField("deepseek-v4-flash", text: $st.model)
                                 .textFieldStyle(.plain)
                                 .font(.system(size: 12, design: .monospaced))
                         }
