@@ -37,10 +37,13 @@ struct ChatMessage: Identifiable {
 enum ToolRegistry {
     static let runCommand = LLMToolDef(
         name: "run_command",
-        description: "在持久 shell 中执行命令（Alpine Linux 沙箱）：当前目录与 export 的环境变量跨调用保持，和真终端一样。返回 stdout/stderr（30 秒超时）。读文件用 cat，列目录用 ls。",
+        description: "在持久 shell 中执行命令（Alpine Linux 沙箱）：当前目录与 export 的环境变量跨调用保持，和真终端一样。返回 stdout/stderr。默认超时 60 秒，网络下载/包安装类命令自动放宽到 240 秒；仍不够时用 timeout_sec 指定（最高 600）。读文件用 cat，列目录用 ls。",
         parameters: [
             "type": "object",
-            "properties": ["command": ["type": "string", "description": "要执行的 shell 命令"]],
+            "properties": [
+                "command": ["type": "string", "description": "要执行的 shell 命令"],
+                "timeout_sec": ["type": "number", "description": "可选：命令超时秒数（60-600）。网络下载、包安装、编译等慢命令建议设 120-300"],
+            ],
             "required": ["command"],
         ])
 
@@ -87,7 +90,7 @@ final class AgentSession: ObservableObject {
     private(set) var sessionID = ""
     private var log: SessionLog?
     private let toolTimeout: TimeInterval = 30
-    private let maxSteps = 12
+    private let maxSteps = 48   // 原 12 步硬终止会拦腰斩断合法的多块写文件任务（dsh 无步数护栏，靠中断+超时）
     private let compactThresholdTokens = 48_000
     private var turnNo = 0
     private var allowedTools: Set<String> = []
@@ -240,6 +243,12 @@ final class AgentSession: ObservableObject {
         while stepNo < maxSteps {
             stepNo += 1
             log?.append(SessionEvent.stepStart, .init(turn: turnNo, step: stepNo))
+            if stepNo == 24 {
+                let hint = "〔系统提示：本任务已执行 24 步（上限 48）。请尽快收敛：优先完成核心目标并总结，避免继续展开新分支。〕"
+                llmHistory.append(.init(role: .user, content: hint))
+                messages.append(.agent(hint))
+                log?.append(SessionEvent.agentMessage, .init(text: hint))
+            }
 
             // ---- 一步：LLM 流式调用（思考→Think 行；正文→assistant 行；限流自动重试） ----
             messages.append(.agent(""))
@@ -459,18 +468,31 @@ final class AgentSession: ObservableObject {
         case "write_file":
             let p = (args["path"] as? String ?? "/tmp/qingshan-out").replacingOccurrences(of: "'", with: "")
             let content = args["content"] as? String ?? ""
-            // 安全修复：分隔符用一次性 nonce（固定 QSEOF 可被内容中的同名行截断/注入）
-            let delim = "QS_EOF_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
-            command = "mkdir -p \"$(dirname '\(p)')\" && cat > '\(p)' <<'\(delim)'\n\(content)\n\(delim)\necho written: \(content.count) chars"
+            // 修复（真机实测 >17KB 截断）：大内容不走 PTY 注入——Swift 直写宿主侧暂存
+            // （guest /tmp = Documents/root/data/tmp），shell 只执行一条 cp 短命令。
+            // heredoc nonce 方案仍受 PTY 输入缓冲限制，此处彻底绕开。
+            let staging = FirstRun.rootURL.appendingPathComponent("data/tmp/.qs_write")
+            try? FileManager.default.createDirectory(at: staging.deletingLastPathComponent(),
+                                                     withIntermediateDirectories: true)
+            try? content.write(to: staging, atomically: true, encoding: .utf8)
+            command = "mkdir -p \"$(dirname '\(p)')\" && cp /tmp/.qs_write '\(p)' && echo written: \(content.count) chars"
         default:
             command = args["command"] as? String ?? "true"
         }
-        return await execShell(command)
+        // 超时分级：模型可指定 timeout_sec；网络类命令自动放宽；默认 60s（原 30s 过紧）
+        let netPattern = try? NSRegularExpression(pattern: "\\b(apk|wget|curl|pip3?|npm|git\\s+(clone|pull|push)|http)\\b")
+        let isNet = netPattern.map { $0.firstMatch(in: command, range: NSRange(location: 0, length: (command as NSString).length)) != nil } ?? false
+        let argTimeout = (args["timeout_sec"] as? Double) ?? (args["timeout_sec"] as? NSNumber)?.doubleValue
+        let timeout: TimeInterval
+        if let t = argTimeout, t > 0 { timeout = min(600, t) }
+        else if isNet { timeout = 240 }
+        else { timeout = 60 }
+        return await execShell(command, timeout: timeout)
     }
 
     /// M5：走持久 shell（bash-persistent 语义）——cd/export 等状态跨调用保持
-    private func execShell(_ command: String) async -> (Int32, Int, String) {
-        let r = await PersistentShell.shared.run(command, timeout: toolTimeout)
+    private func execShell(_ command: String, timeout: TimeInterval? = nil) async -> (Int32, Int, String) {
+        let r = await PersistentShell.shared.run(command, timeout: timeout ?? toolTimeout)
         return (Int32(r.exitCode), r.durationMs, r.output)
     }
 
