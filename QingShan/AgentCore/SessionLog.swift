@@ -163,6 +163,27 @@ final class SessionLog {
         try? lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// 恢复会话专用：读取现存日志的最大 seq 与 header 存在性，
+    /// 使 append 从正确游标继续（此前 resume 会重写 header、seq 从 1 重排，写坏日志）
+    static func resumed(sessionID: String) -> SessionLog {
+        let log = SessionLog(sessionID: sessionID)
+        let url = sessionsDir.appendingPathComponent("\(sessionID).jsonl")
+        guard let raw = try? String(contentsOf: url, encoding: .utf8), !raw.isEmpty else { return log }
+        var maxSeq = 0
+        var hasHeader = false
+        for line in raw.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let d = line.data(using: .utf8),
+                  let ev = try? JSONDecoder().decode(SessionEvent.self, from: d) else { continue }
+            maxSeq = max(maxSeq, ev.seq)
+            if ev.type == sessionHeaderType { hasHeader = true }
+        }
+        if hasHeader {
+            log.headerWritten = true
+            log.nextSeq = max(maxSeq + 1, 1)
+        }
+        return log
+    }
+
     static func replay(sessionID: String) -> [SessionEvent] {
         let url = sessionsDir.appendingPathComponent("\(sessionID).jsonl")
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return [] }

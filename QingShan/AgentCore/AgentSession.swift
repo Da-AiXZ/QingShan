@@ -88,7 +88,7 @@ final class AgentSession: ObservableObject {
     private var log: SessionLog?
     private let toolTimeout: TimeInterval = 30
     private let maxSteps = 12
-    private let compactThresholdTokens = 8_000
+    private let compactThresholdTokens = 48_000
     private var turnNo = 0
     private var allowedTools: Set<String> = []
     private var approvalCont: CheckedContinuation<ApprovalDecision, Never>?
@@ -136,7 +136,7 @@ final class AgentSession: ObservableObject {
         guard events.contains(where: { $0.type == SessionEvent.sessionHeaderType }) else { return false }
 
         sessionID = id
-        log = SessionLog(sessionID: id)
+        log = SessionLog.resumed(sessionID: id)
         messages.removeAll()
         llmHistory = [.init(role: .system, content: Self.initialSystemPrompt)]
         turnNo = 0
@@ -341,7 +341,13 @@ final class AgentSession: ObservableObject {
                 guard ToolRegistry.def(named: call.name) != nil else {
                     let out = "未知工具：\(call.name)"
                     messages.append(.agent(out))
-                    log?.append(SessionEvent.agentMessage, .init(text: out))
+                    // 数据修复：未知工具也落 tool/call+tool/result 对——否则 resume 后
+                    // 出现 "assistant 带 tool_calls 但无 tool 结果"，DeepSeek API 400
+                    log?.append(SessionEvent.toolCall, .init(turn: turnNo, step: stepNo,
+                                                             id: call.id, name: call.name))
+                    log?.append(SessionEvent.toolResult, .init(turn: turnNo, step: stepNo,
+                                                               id: call.id, exitCode: -1,
+                                                               output: out))
                     llmHistory.append(.init(role: .tool, content: out, toolCallId: call.id))
                     continue
                 }
@@ -391,16 +397,19 @@ final class AgentSession: ObservableObject {
                 messages[messages.count - 1].running = true
 
                 let (code, ms, out) = await execToolCall(name: call.name, args: args)
+                // dsh maxOutputChars 语义：超限截断并提示模型可检索，防大 cat 打爆上下文
+                let clipped = out.count > 16_000
+                let outForModel = clipped ? String(out.prefix(16_000)) + "\n<response clipped><NOTE>输出过长已截断。请用 grep/head 等缩小范围后重试。</NOTE>" : out
 
-                messages[messages.count - 1].output = out
+                messages[messages.count - 1].output = outForModel
                 messages[messages.count - 1].exitCode = Int(code)
                 messages[messages.count - 1].durationMs = ms
                 messages[messages.count - 1].running = false
 
                 log?.append(SessionEvent.toolResult, .init(turn: turnNo, step: stepNo,
                                                            id: call.id, exitCode: Int(code), durationMs: ms,
-                                                           output: String(out.prefix(6000))))
-                llmHistory.append(.init(role: .tool, content: out.isEmpty ? "（无输出）" : out, toolCallId: call.id))
+                                                           output: String(outForModel.prefix(6000))))
+                llmHistory.append(.init(role: .tool, content: outForModel.isEmpty ? "（无输出）" : outForModel, toolCallId: call.id))
             }
 
             log?.append(SessionEvent.stepEnd, .init(turn: turnNo, step: stepNo))
@@ -450,7 +459,9 @@ final class AgentSession: ObservableObject {
         case "write_file":
             let p = (args["path"] as? String ?? "/tmp/qingshan-out").replacingOccurrences(of: "'", with: "")
             let content = args["content"] as? String ?? ""
-            command = "mkdir -p \"$(dirname '\(p)')\" && cat > '\(p)' <<'QSEOF'\n\(content)\nQSEOF\necho written: \(content.count) chars"
+            // 安全修复：分隔符用一次性 nonce（固定 QSEOF 可被内容中的同名行截断/注入）
+            let delim = "QS_EOF_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+            command = "mkdir -p \"$(dirname '\(p)')\" && cat > '\(p)' <<'\(delim)'\n\(content)\n\(delim)\necho written: \(content.count) chars"
         default:
             command = args["command"] as? String ?? "true"
         }
@@ -505,7 +516,8 @@ final class AgentSession: ObservableObject {
 
     private func compactedHistory(summary: String) -> [LLMMessage] {
         [
-            .init(role: .system, content: Self.systemPrompt),
+            // 修复：compact 后必须保留 AGENTS.md 与记忆摘要注入（此前用裸 systemPrompt 丢失）
+            .init(role: .system, content: Self.initialSystemPrompt),
             .init(role: .user, content: "此前对话的交接摘要：\n\(summary)"),
             .init(role: .assistant, content: "收到，我已了解此前上下文，继续。"),
         ]

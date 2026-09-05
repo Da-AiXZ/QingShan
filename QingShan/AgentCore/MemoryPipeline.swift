@@ -73,7 +73,7 @@ final class MemoryPipeline {
             default: break
             }
         }
-        let transcript = lines.joined(separator: "\n").prefix(8_000)
+        let transcript = MemoryStore.redact(String(lines.joined(separator: "\n").prefix(8_000)))
         guard transcript.count > 10 else { return false }
 
         let prompt = """
@@ -117,8 +117,8 @@ final class MemoryPipeline {
         guard let d = jsonText.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return false }
 
-        let summary = obj["rollout_summary"] as? String ?? ""
-        let entries = (obj["entries"] as? [String]) ?? []
+        let summary = MemoryStore.redact(obj["rollout_summary"] as? String ?? "")
+        let entries = ((obj["entries"] as? [String]) ?? []).map { MemoryStore.redact($0) }
         MemoryStore.shared.insert(summary: summary, newEntries: entries, sourceSession: sessionID)
         return true
     }

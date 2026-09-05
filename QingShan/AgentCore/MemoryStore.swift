@@ -49,9 +49,16 @@ final class MemoryStore: ObservableObject {
     func load() {
         let fm = FileManager.default
         try? fm.createDirectory(at: Self.memoryDir, withIntermediateDirectories: true)
-        if let d = fm.contents(atPath: entriesURL.path),
-           let es = try? JSONDecoder().decode([MemoryEntry].self, from: d) {
-            entries = es
+        if let d = fm.contents(atPath: entriesURL.path) {
+            if let es = try? JSONDecoder().decode([MemoryEntry].self, from: d) {
+                entries = es
+            } else if !d.isEmpty {
+                // 数据修复：索引损坏时备份原文件并拒载——绝不静默置空
+                //（否则下次整合会把全部记忆当空集重写，等效清库）
+                let bak = entriesURL.appendingPathExtension("corrupt-\(Int(Date().timeIntervalSince1970))")
+                try? fm.copyItem(at: entriesURL, to: bak)
+                ToastCenter.shared.show("记忆索引损坏，已备份为 \(bak.lastPathComponent)，记忆未加载", kind: .error, duration: 6)
+            }
         }
         if let d = fm.contents(atPath: Self.memoryDir.appendingPathComponent(".pipeline_meta").path),
            let meta = try? JSONDecoder().decode([String: Date].self, from: d) {
@@ -85,7 +92,9 @@ final class MemoryStore: ObservableObject {
         }
         let pruned = before - entries.count
 
-        entries.sort { ($0.usageCount, $1.lastUsage ?? $1.generatedAt) > ($1.usageCount, $0.lastUsage ?? $0.generatedAt) }
+        // 排序修复：此前元组字段错位混排（左侧取 $1、右侧取 $0），引用数相同时时间
+        // tiebreak 反向，叠加 top-N 截断导致新记忆反而被截掉
+        entries.sort { ($0.usageCount, $0.lastUsage ?? $0.generatedAt) > ($1.usageCount, $1.lastUsage ?? $1.generatedAt) }
         if entries.count > topN { entries = Array(entries.prefix(topN)) }
 
         // memory_summary.md（恒定注入，≤2500 token ≈ 10K 字符截断）
@@ -176,6 +185,18 @@ final class MemoryStore: ObservableObject {
         guard let s = try? String(contentsOf: Self.agentsMDURL, encoding: .utf8),
               !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
         return "\n## AGENTS.md（用户项目指令，必须遵守）\n\n" + String(s.prefix(16_000)) + "\n"
+    }
+
+    /// 确定性脱敏（Codex redact_secrets 语义）：输入与产出两侧都跑
+    static func redact(_ s: String) -> String {
+        var r = s
+        r = r.replacingOccurrences(of: "\b(?:sk|rk)-[A-Za-z0-9_-]{8,}\b",
+                                   with: "[REDACTED_SECRET]", options: .regularExpression)
+        r = r.replacingOccurrences(of: "Bearer\\s+[A-Za-z0-9._-]{8,}",
+                                   with: "Bearer [REDACTED]", options: .regularExpression)
+        r = r.replacingOccurrences(of: "(?i)(password|passwd|api_?key|secret|token)\\s*[=:]\\s*\\S+",
+                                   with: "$1=[REDACTED]", options: .regularExpression)
+        return r
     }
 
     func deleteEntry(id: String) {

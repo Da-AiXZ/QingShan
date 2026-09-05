@@ -64,9 +64,10 @@ enum ApprovalService {
             if riskyPattern.contains(where: { trimmed.range(of: $0, options: .regularExpression) != nil }) {
                 return true
             }
-            // 不在只读白名单里的也算需要审批（fail-closed）
+            // 不在只读白名单里的也算需要审批（fail-closed）。
+            // 安全修复：白名单只允许 anchored 整条匹配——无锚点的 contains 检查
+            // 会让 "cat x; rm -rf /" 命中 "^cat\b" 而免审放行。
             let isSafe = safePattern.contains { trimmed.range(of: $0, options: [.regularExpression, .anchored]) != nil }
-                || safePattern.contains(where: { trimmed.range(of: $0, options: .regularExpression) != nil })
             return !isSafe
         }
     }

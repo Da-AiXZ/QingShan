@@ -496,7 +496,6 @@ struct RootView: View {
             Spacer()
             rightRow("arrow.triangle.pull", "审查", "Ctrl+Shift+G", "review")
             rightRow("terminal", "终端", "Ctrl+`", "term")
-            rightRow("safari", "浏览器", "Ctrl+T", "term")
             rightRow("folder", "文件", "Ctrl+P", "files")
             Spacer()
         }

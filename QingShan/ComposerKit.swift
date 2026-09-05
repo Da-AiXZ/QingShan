@@ -45,7 +45,9 @@ enum EffortTier: String, CaseIterable {
 // MARK: - 上下文用量估算（真实：基于 llmHistory 字符量）
 
 enum CtxUsage {
-    static let windowTokens: Double = 8_000   // compact 阈值即窗口估算
+    // 修复：此前 8k 硬编码比真实窗口小 8-16 倍 → 过早 compact + CtxRing 虚高。
+    // DeepSeek chat 64k / reasoner 64k；中转模型普遍 64k 起。
+    static let windowTokens: Double = 64_000
     static func usedPercent(history: [LLMMessage]) -> Double {
         let chars = history.reduce(0) { $0 + ($1.content?.count ?? 0) + 8 }
         let tokens = Double(chars) / 2.0

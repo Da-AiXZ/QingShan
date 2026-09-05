@@ -51,16 +51,20 @@ final class SessionStore: ObservableObject {
     }
 
     private func titleOf(id: String, fallback: String) -> String {
+        if let o = UserDefaults.standard.dictionary(forKey: "sess.title.override") as? [String: String],
+           let t = o[id], !t.isEmpty { titleCache[id] = t; return t }
         if let t = titleCache[id] { return t }
         let t = loadTitle(id: id)
         titleCache[id] = t
         return t
     }
 
-    /// 重命名：更新内存缓存 + 重写 header 行的 title
+    /// 重命名：标题覆盖存 UserDefaults（不重写 append-only 日志，避免与 append 竞态）
     func rename(sessionID id: String, title: String) {
         titleCache[id] = title
-        SessionLog.rewriteHeaderTitle(sessionID: id, title: title)
+        var o = UserDefaults.standard.dictionary(forKey: "sess.title.override") as? [String: String] ?? [:]
+        o[id] = title
+        UserDefaults.standard.set(o, forKey: "sess.title.override")
         refresh()
     }
 
