@@ -190,7 +190,7 @@ final class MemoryStore: ObservableObject {
     /// 确定性脱敏（Codex redact_secrets 语义）：输入与产出两侧都跑
     static func redact(_ s: String) -> String {
         var r = s
-        r = r.replacingOccurrences(of: "\b(?:sk|rk)-[A-Za-z0-9_-]{8,}\b",
+        r = r.replacingOccurrences(of: "\\b(?:sk|rk)-[A-Za-z0-9_-]{8,}\\b",
                                    with: "[REDACTED_SECRET]", options: .regularExpression)
         r = r.replacingOccurrences(of: "Bearer\\s+[A-Za-z0-9._-]{8,}",
                                    with: "Bearer [REDACTED]", options: .regularExpression)

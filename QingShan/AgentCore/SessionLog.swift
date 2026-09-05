@@ -175,7 +175,7 @@ final class SessionLog {
             guard let d = line.data(using: .utf8),
                   let ev = try? JSONDecoder().decode(SessionEvent.self, from: d) else { continue }
             maxSeq = max(maxSeq, ev.seq)
-            if ev.type == sessionHeaderType { hasHeader = true }
+            if ev.type == SessionEvent.sessionHeaderType { hasHeader = true }
         }
         if hasHeader {
             log.headerWritten = true
